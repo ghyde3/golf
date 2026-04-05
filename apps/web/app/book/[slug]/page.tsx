@@ -117,9 +117,12 @@ export default async function ClubProfilePage({
 
       {/* CTA */}
       <div className="max-w-md mx-auto px-4 py-8">
-        <button className="w-full bg-green-600 text-white py-4 rounded-xl text-lg font-semibold hover:bg-green-700 transition-colors shadow-md">
+        <a
+          href={`/book/${params.slug}/times${club ? `?clubId=${club.id}` : ""}`}
+          className="block w-full bg-green-600 text-white py-4 rounded-xl text-lg font-semibold hover:bg-green-700 transition-colors shadow-md text-center"
+        >
           Book a Tee Time
-        </button>
+        </a>
       </div>
     </main>
   );

@@ -29,8 +29,17 @@ This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("T
 - **DB migration generate**: `pnpm db:generate`
 - **DB migration run**: `DATABASE_URL=postgresql://ubuntu:devpass@localhost:5432/teetimes pnpm db:migrate`
 
+### Seeding the database
+- **Base seed** (users + club + config): `pnpm seed`
+- The seed script is idempotent (uses `onConflictDoNothing`).
+
 ### Key gotchas
 - **bcrypt build scripts**: pnpm 10.x blocks native build scripts by default. After `pnpm install`, bcrypt won't have its native bindings. You must manually run its install script (see above) or use `pnpm rebuild bcrypt` won't work because pnpm considers it already installed.
 - **Drizzle config paths**: The `drizzle.config.ts` uses paths relative to the workspace root (not the `packages/db/` directory) because it's invoked from root via `pnpm db:generate`/`pnpm db:migrate`.
 - **Environment variables**: Copy `.env.example` to `.env` at the repo root. The `DATABASE_URL` must be set for DB operations.
-- **Next.js ESLint**: The web app uses `.eslintrc.json` with `next/core-web-vitals`. The API uses flat ESLint config (`eslint.config.mjs`).
+- **Next.js ESLint**: The web app uses `.eslintrc.json` with `next/core-web-vitals`. The API uses flat ESLint config (`eslint.config.mjs`) with `typescript-eslint`.
+- **API server must be running for web pages**: The club profile and booking pages are server components / client components that fetch from the API at `http://localhost:3001`. Start the API before testing web pages.
+- **Slot generation**: Tee slots are generated in-memory from club config (not pre-stored in DB). Only booked/blocked slots persist in the `tee_slots` table. The availability endpoint merges generated slots with DB rows.
+
+### E2E booking flow
+The full booking flow is: landing page (`/`) → club profile (`/book/pinebrook`) → times picker (`/book/pinebrook/times`) → confirm (`/book/pinebrook/confirm`) → success (`/book/pinebrook/success`). All pages must be tested in sequence to verify the flow works end-to-end.

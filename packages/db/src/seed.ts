@@ -65,10 +65,9 @@ async function seed() {
     await db.insert(courses).values(c).onConflictDoNothing();
   }
 
-  // Create users
-  // password: dev-only (bcrypt hash)
+  // Create users — dev-only password for all seeded accounts: `devpass`
   const passwordHash =
-    "$2b$10$K4GlJs09K1gEKm3v1m7xKe3yRkOj5bOy5Y5tVL2xVPBvA1DaKgyMC";
+    "$2b$10$U98sJqo9st.7iMFXFac/detsKGsmYGNXg4gO5ATPFj9hB0SKcsW5m";
 
   const userEntries = [
     { email: "admin@teetimes.dev", name: "Platform Admin" },

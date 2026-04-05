@@ -6,11 +6,18 @@ import { eq, desc, and, gte, lte, sql } from "drizzle-orm";
 import { resolveConfig, resolveHours } from "./lib/configResolver";
 import { generateSlots } from "./lib/slotGenerator";
 import { generateBookingRef } from "./lib/bookingRef";
+import authRoutes from "./routes/auth";
+import platformRoutes from "./routes/platform";
+import clubManageRoutes from "./routes/clubs";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+app.use("/api/auth", authRoutes);
+app.use("/api/platform", platformRoutes);
+app.use("/api/clubs/:clubId/manage", clubManageRoutes);
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true });

@@ -18,6 +18,23 @@ export default function Home() {
           >
             Book a Tee Time
           </a>
+          <div className="mt-8 pt-6 border-t border-gray-200 text-sm text-gray-500 space-y-2">
+            <p className="font-medium text-gray-600">Operators</p>
+            <div className="flex flex-col gap-2">
+              <a
+                href="/platform"
+                className="text-green-700 hover:text-green-800 underline"
+              >
+                Platform admin
+              </a>
+              <a
+                href="/club"
+                className="text-green-700 hover:text-green-800 underline"
+              >
+                Club console
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </main>

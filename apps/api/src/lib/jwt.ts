@@ -19,3 +19,41 @@ export function signToken(payload: JWTPayload, expiresInSec = SEVEN_DAYS_SEC): s
 export function verifyToken(token: string): JWTPayload {
   return jwt.verify(token, getSecret()) as JWTPayload;
 }
+
+export function signGuestCancelToken(bookingId: string): string {
+  return jwt.sign(
+    { type: "guest_cancel", bookingId },
+    getSecret(),
+    { expiresIn: "48h" }
+  );
+}
+
+export function verifyGuestCancelToken(token: string): { bookingId: string } {
+  const p = jwt.verify(token, getSecret()) as {
+    type?: string;
+    bookingId?: string;
+  };
+  if (p.type !== "guest_cancel" || !p.bookingId) {
+    throw new Error("Invalid cancel token");
+  }
+  return { bookingId: p.bookingId };
+}
+
+export function signInviteToken(userId: string): string {
+  return jwt.sign(
+    { type: "invite_password", userId },
+    getSecret(),
+    { expiresIn: "7d" }
+  );
+}
+
+export function verifyInviteToken(token: string): { userId: string } {
+  const p = jwt.verify(token, getSecret()) as {
+    type?: string;
+    userId?: string;
+  };
+  if (p.type !== "invite_password" || !p.userId) {
+    throw new Error("Invalid invite token");
+  }
+  return { userId: p.userId };
+}

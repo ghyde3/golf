@@ -1,9 +1,10 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { auth } from "@/auth";
 
-export function getSessionToken(): string | undefined {
-  return cookies().get("session")?.value;
+export async function getSessionToken(): Promise<string | undefined> {
+  const session = await auth();
+  return session?.accessToken;
 }
 
 export function apiBaseUrl(): string {

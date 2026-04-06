@@ -1,12 +1,7 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router, type Request } from "express";
 import { db, clubs, clubConfig, bookings, teeSlots } from "@teetimes/db";
 import { eq, desc, sql, and, gte, lt, isNull, inArray } from "drizzle-orm";
-import {
-  getAuthPayload,
-  canAccessClub,
-  sendForbidden,
-  sendUnauthorized,
-} from "../lib/auth";
+import { authenticate, requireClubAccess } from "../middleware/auth";
 
 const router = Router({ mergeParams: true });
 
@@ -17,24 +12,7 @@ function paramClubId(req: Request): string | undefined {
   return undefined;
 }
 
-function requireClubAccess(req: Request, res: Response, next: NextFunction) {
-  const clubId = paramClubId(req);
-  if (!clubId) {
-    res.status(400).json({ error: "clubId required" });
-    return;
-  }
-  const payload = getAuthPayload(req);
-  if (!payload) {
-    sendUnauthorized(res);
-    return;
-  }
-  if (!canAccessClub(payload.roles, clubId)) {
-    sendForbidden(res);
-    return;
-  }
-  next();
-}
-
+router.use(authenticate);
 router.use(requireClubAccess);
 
 router.get("/summary", async (req, res) => {

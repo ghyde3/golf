@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cookies } from "next/headers";
+import { auth } from "@/auth";
 
 function apiBase(): string {
   return (
@@ -10,8 +10,9 @@ function apiBase(): string {
   );
 }
 
-function authHeader(): HeadersInit {
-  const token = cookies().get("session")?.value;
+async function authHeader(): Promise<HeadersInit> {
+  const session = await auth();
+  const token = session?.accessToken;
   if (!token) {
     return {};
   }
@@ -24,19 +25,23 @@ export async function platformApi(path: string, init?: RequestInit) {
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      ...authHeader(),
+      ...(await authHeader()),
       ...init?.headers,
     },
   });
 }
 
-export async function clubManageApi(clubId: string, path: string, init?: RequestInit) {
+export async function clubManageApi(
+  clubId: string,
+  path: string,
+  init?: RequestInit
+) {
   return fetch(`${apiBase()}/api/clubs/${clubId}/manage${path}`, {
     ...init,
     cache: "no-store",
     headers: {
       "Content-Type": "application/json",
-      ...authHeader(),
+      ...(await authHeader()),
       ...init?.headers,
     },
   });

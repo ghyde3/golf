@@ -2,6 +2,8 @@
   "name": "teetimes",
   "private": true,
   "scripts": {
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",
@@ -9,7 +11,7 @@
     "typecheck": "turbo typecheck",
     "seed": "tsx packages/db/src/seed.ts",
     "seed:bookings": "tsx packages/db/src/seedBookings.ts",
-    "seed:reset": "pnpm seed && pnpm seed:bookings",
+    "seed:reset": "tsx packages/db/src/seedReset.ts && pnpm seed && pnpm seed:bookings",
     "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts",
     "db:migrate": "drizzle-kit migrate --config packages/db/drizzle.config.ts"
   },

@@ -2,15 +2,42 @@ import { Router } from "express";
 import bcrypt from "bcrypt";
 import { eq, and, isNull, inArray, asc } from "drizzle-orm";
 import { db, users, clubs } from "@teetimes/db";
-import { LoginSchema } from "@teetimes/validators";
+import { LoginSchema, SetPasswordSchema } from "@teetimes/validators";
 import { signToken } from "../lib/jwt";
 import {
   getAuthPayload,
   sendUnauthorized,
   hasPlatformAdmin,
 } from "../lib/auth";
+import { verifyInviteToken } from "../lib/jwt";
 
 const router = Router();
+
+router.post("/set-password", async (req, res) => {
+  const parsed = SetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+  try {
+    const { userId } = verifyInviteToken(parsed.data.token);
+    const hash = await bcrypt.hash(parsed.data.password, 10);
+    const [updated] = await db
+      .update(users)
+      .set({ passwordHash: hash })
+      .where(eq(users.id, userId))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch {
+    res.status(400).json({ error: "Invalid or expired token" });
+  }
+});
 
 router.post("/login", async (req, res) => {
   const parsed = LoginSchema.safeParse(req.body);

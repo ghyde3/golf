@@ -1,48 +1,32 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+import { auth } from "@/auth";
+import type { UserRole } from "@teetimes/types";
 
-type RoleClaim = { role: string; clubId: string | null };
-
-function getSecretKey() {
-  const s = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
-  if (!s) return null;
-  return new TextEncoder().encode(s);
-}
-
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  const secret = getSecretKey();
-  if (!secret) {
-    return NextResponse.redirect(new URL("/login?error=config", request.url));
-  }
-
-  const token = request.cookies.get("session")?.value;
-  if (!token) {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
-  }
-
-  let roles: RoleClaim[];
-  try {
-    const { payload } = await jwtVerify(token, secret);
-    roles = (payload.roles as RoleClaim[]) ?? [];
-  } catch {
-    const login = new URL("/login", request.url);
-    login.searchParams.set("next", pathname);
-    return NextResponse.redirect(login);
-  }
+export default auth((req) => {
+  const roles =
+    (req.auth?.user as { roles?: UserRole[] } | undefined)?.roles ?? [];
+  const { pathname } = req.nextUrl;
 
   if (pathname.startsWith("/platform")) {
-    const ok = roles.some((r) => r.role === "platform_admin" && r.clubId === null);
+    if (!req.auth?.user) {
+      const login = new URL("/login", req.url);
+      login.searchParams.set("next", pathname);
+      return NextResponse.redirect(login);
+    }
+    const ok = roles.some(
+      (r) => r.role === "platform_admin" && r.clubId === null
+    );
     if (!ok) {
-      return NextResponse.redirect(new URL("/login?error=forbidden", request.url));
+      return NextResponse.redirect(new URL("/login?error=forbidden", req.url));
     }
   }
 
-  if (pathname.startsWith("/club/")) {
+  if (pathname.startsWith("/club/") || pathname === "/club") {
+    if (!req.auth?.user) {
+      const login = new URL("/login", req.url);
+      login.searchParams.set("next", pathname);
+      return NextResponse.redirect(login);
+    }
     const parts = pathname.split("/").filter(Boolean);
     const clubId = parts[1];
     if (clubId) {
@@ -50,16 +34,17 @@ export async function middleware(request: NextRequest) {
         roles.some((r) => r.role === "platform_admin" && r.clubId === null) ||
         roles.some(
           (r) =>
-            (r.role === "club_admin" || r.role === "staff") && r.clubId === clubId
+            (r.role === "club_admin" || r.role === "staff") &&
+            r.clubId === clubId
         );
       if (!ok) {
-        return NextResponse.redirect(new URL("/login?error=forbidden", request.url));
+        return NextResponse.redirect(new URL("/login?error=forbidden", req.url));
       }
     }
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: ["/platform/:path*", "/club", "/club/:path*"],

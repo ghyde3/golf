@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from "express";
+import { Router } from "express";
 import {
   db,
   clubs,
@@ -8,29 +8,12 @@ import {
 } from "@teetimes/db";
 import { eq, desc, sql, and, gte, lt, isNull } from "drizzle-orm";
 import { CreateClubSchema, PlatformClubStatusSchema } from "@teetimes/validators";
-import {
-  getAuthPayload,
-  hasPlatformAdmin,
-  sendForbidden,
-  sendUnauthorized,
-} from "../lib/auth";
+import { authenticate, requireRole } from "../middleware/auth";
 
 const router = Router();
 
-function requirePlatformAdmin(req: Request, res: Response, next: NextFunction) {
-  const payload = getAuthPayload(req);
-  if (!payload) {
-    sendUnauthorized(res);
-    return;
-  }
-  if (!hasPlatformAdmin(payload.roles)) {
-    sendForbidden(res);
-    return;
-  }
-  next();
-}
-
-router.use(requirePlatformAdmin);
+router.use(authenticate);
+router.use(requireRole("platform_admin"));
 
 router.get("/stats", async (_req, res) => {
   const now = new Date();

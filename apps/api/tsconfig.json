@@ -5,6 +5,7 @@
     "rootDir": "./src",
     "module": "CommonJS",
     "moduleResolution": "node",
+    "jsx": "react-jsx",
     "declaration": false,
     "declarationMap": false
   },

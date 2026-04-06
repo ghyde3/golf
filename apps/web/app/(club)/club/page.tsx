@@ -6,7 +6,7 @@ type Context = {
 };
 
 export default async function ClubEntryPage() {
-  const token = getSessionToken();
+  const token = await getSessionToken();
   if (!token) {
     redirect("/login?next=/club");
   }

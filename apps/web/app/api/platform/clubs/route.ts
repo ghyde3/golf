@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { auth } from "@/auth";
 
 function apiBase() {
   return (
@@ -10,7 +10,8 @@ function apiBase() {
 }
 
 export async function POST(req: NextRequest) {
-  const token = cookies().get("session")?.value;
+  const session = await auth();
+  const token = session?.accessToken;
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

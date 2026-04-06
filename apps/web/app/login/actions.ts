@@ -1,15 +1,8 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-
-function apiBase() {
-  return (
-    process.env.API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:3001"
-  );
-}
+import { AuthError } from "next-auth";
+import { signIn } from "@/auth";
 
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
@@ -17,24 +10,16 @@ export async function loginAction(formData: FormData) {
   const nextRaw = String(formData.get("next") ?? "/");
   const next = nextRaw.startsWith("/") ? nextRaw : "/";
 
-  const res = await fetch(`${apiBase()}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-
-  const data = (await res.json().catch(() => ({}))) as { token?: string };
-
-  if (!res.ok || !data.token) {
-    redirect("/login?error=auth");
+  try {
+    await signIn("credentials", {
+      email,
+      password,
+      redirectTo: next,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      redirect("/login?error=auth");
+    }
+    throw error;
   }
-
-  cookies().set("session", data.token, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-  });
-
-  redirect(next);
 }

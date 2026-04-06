@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: teetimes-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ubuntu
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: teetimes
+    ports:
+      - "5432:5432"
+    volumes:
+      - teetimes_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ubuntu -d teetimes"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    container_name: teetimes-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  teetimes_pgdata:

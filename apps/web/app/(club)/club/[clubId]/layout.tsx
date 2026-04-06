@@ -16,7 +16,7 @@ export default async function ClubShellLayout({
   children: React.ReactNode;
   params: { clubId: string };
 }) {
-  const token = getSessionToken();
+  const token = await getSessionToken();
   if (!token) {
     redirect(`/login?next=/club/${params.clubId}/dashboard`);
   }

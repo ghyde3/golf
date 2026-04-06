@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -48,10 +48,11 @@ function getDateChips(): { label: string; value: string; dayLabel: string }[] {
   return chips;
 }
 
-export default function TimesPage({ params }: { params: { slug: string } }) {
+function TimesPageInner({ params }: { params: { slug: string } }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const clubIdParam = searchParams.get("clubId");
+  const slotFullBanner = searchParams.get("error") === "slot_full";
 
   const [club, setClub] = useState<ClubProfile | null>(null);
   const [players, setPlayers] = useState(2);
@@ -80,7 +81,7 @@ export default function TimesPage({ params }: { params: { slug: string } }) {
     setLoading(true);
     try {
       const res = await fetch(
-        `${API_URL}/api/clubs/${club.id}/availability?date=${selectedDate}&courseId=${selectedCourse}&players=1`
+        `${API_URL}/api/clubs/${club.id}/availability?date=${selectedDate}&courseId=${selectedCourse}&players=1&full=1`
       );
       const data = await res.json();
       setAllSlots(data);
@@ -126,6 +127,7 @@ export default function TimesPage({ params }: { params: { slug: string } }) {
   const dateChips = getDateChips();
 
   function selectSlot(slot: Slot) {
+    if (!isAvailable(slot)) return;
     const q = new URLSearchParams({
       clubId: club!.id,
       courseId: selectedCourse,
@@ -160,6 +162,14 @@ export default function TimesPage({ params }: { params: { slug: string } }) {
       </div>
 
       <div className="max-w-md mx-auto px-4 py-4 space-y-4">
+        {slotFullBanner && (
+          <div
+            role="alert"
+            className="rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2"
+          >
+            That slot just filled — please choose another time.
+          </div>
+        )}
         {/* Players selector */}
         <div className="flex items-center justify-between bg-white rounded-lg p-3 shadow-sm">
           <span className="text-sm font-medium text-gray-700">Players</span>
@@ -302,6 +312,24 @@ export default function TimesPage({ params }: { params: { slug: string } }) {
         )}
       </div>
     </main>
+  );
+}
+
+export default function TimesPage({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">
+          Loading…
+        </main>
+      }
+    >
+      <TimesPageInner params={params} />
+    </Suspense>
   );
 }
 

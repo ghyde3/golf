@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { auth } from "@/auth";
 
 function apiBase() {
   return (
@@ -13,7 +13,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { clubId: string } }
 ) {
-  const token = cookies().get("session")?.value;
+  const session = await auth();
+  const token = session?.accessToken;
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

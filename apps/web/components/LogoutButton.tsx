@@ -1,15 +1,15 @@
 "use client";
 
 export function LogoutButton() {
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+  function logout() {
+    const callback = encodeURIComponent("/login");
+    window.location.href = `/api/auth/signout?callbackUrl=${callback}`;
   }
 
   return (
     <button
       type="button"
-      onClick={() => void logout()}
+      onClick={() => logout()}
       className="text-sm text-slate-400 hover:text-white transition-colors"
     >
       Sign out

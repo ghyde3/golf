@@ -5,4 +5,6 @@ export const CourseSchema = z.object({
   holes: z.union([z.literal(9), z.literal(18)]),
 });
 
+export const CoursePatchSchema = CourseSchema.partial();
+
 export type Course = z.infer<typeof CourseSchema>;

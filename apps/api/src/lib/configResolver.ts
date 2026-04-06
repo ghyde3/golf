@@ -5,6 +5,7 @@ interface ClubConfigRow {
   closeTime: string | null;
   schedule: unknown;
   timezone: string | null;
+  cancellationHours?: number | null;
   [key: string]: unknown;
 }
 

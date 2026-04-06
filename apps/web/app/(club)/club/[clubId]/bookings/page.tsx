@@ -1,14 +1,27 @@
-"use client";
+import { clubManageApi } from "@/lib/admin-api";
+import {
+  BookingsClient,
+  type ClubBookingRow,
+} from "./BookingsClient";
 
-import { SetTopBar } from "@/components/club/ClubTopBarContext";
+export default async function ClubBookingsPage({
+  params,
+}: {
+  params: { clubId: string };
+}) {
+  const res = await clubManageApi(params.clubId, "/bookings");
+  if (!res.ok) {
+    return (
+      <p className="p-6 text-muted">
+        Could not load bookings. You may not have access.
+      </p>
+    );
+  }
 
-export default function ClubBookingsStubPage() {
+  const data = (await res.json()) as { bookings?: ClubBookingRow[] };
+  const bookings = Array.isArray(data.bookings) ? data.bookings : [];
+
   return (
-    <>
-      <SetTopBar title="Bookings" />
-      <div className="p-6">
-        <h2 className="font-display text-xl text-ink">Bookings</h2>
-      </div>
-    </>
+    <BookingsClient clubId={params.clubId} bookings={bookings} />
   );
 }

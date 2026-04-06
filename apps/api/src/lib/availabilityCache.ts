@@ -13,6 +13,9 @@ export type CachedAvailabilitySlot = {
   /** Present when a booking exists for this persisted tee slot */
   bookingId?: string | null;
   bookingRef?: string | null;
+  guestName?: string | null;
+  /** Players for the booking shown on this slot (when booking exists) */
+  bookingPlayersCount?: number | null;
 };
 
 export type AvailabilityCacheVariant = number | "full";

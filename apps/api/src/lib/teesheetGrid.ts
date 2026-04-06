@@ -123,6 +123,8 @@ export async function buildTeesheetGrid(
         const b = bySlot.get(m.id)!;
         m.bookingId = b.id;
         m.bookingRef = b.bookingRef;
+        m.guestName = b.guestName ?? null;
+        m.bookingPlayersCount = b.playersCount;
       }
     }
   }

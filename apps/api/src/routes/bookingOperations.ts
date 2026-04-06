@@ -1,11 +1,10 @@
 import { Router } from "express";
-import { eq, and, isNull, desc, sql } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, gte } from "drizzle-orm";
 import {
   db,
   bookings,
   bookingPlayers,
   teeSlots,
-  courses,
   clubConfig,
 } from "@teetimes/db";
 import { CreateBookingSchema } from "@teetimes/validators";
@@ -115,6 +114,136 @@ router.get("/:bookingId", authenticate, async (req, res) => {
       noShow: p.noShow,
     })),
   });
+});
+
+router.patch("/:bookingId", authenticate, async (req, res) => {
+  const auth = req.auth;
+  if (!auth) {
+    sendUnauthorized(res);
+    return;
+  }
+
+  const bookingId = String(req.params.bookingId);
+  const body = req.body as { teeSlotId?: unknown };
+  if (typeof body.teeSlotId !== "string" || !body.teeSlotId.trim()) {
+    res.status(400).json({ error: "teeSlotId required" });
+    return;
+  }
+  const newTeeSlotId = body.teeSlotId.trim();
+
+  const booking = await db.query.bookings.findFirst({
+    where: and(eq(bookings.id, bookingId), isNull(bookings.deletedAt)),
+    with: {
+      teeSlot: { with: { course: { with: { club: true } } } },
+    },
+  });
+
+  if (!booking?.teeSlot?.course?.club) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const clubId = booking.teeSlot.course.club.id;
+  if (!canAccessClub(auth.roles, clubId)) {
+    sendForbidden(res);
+    return;
+  }
+
+  const oldSlot = booking.teeSlot;
+  if (oldSlot.id === newTeeSlotId) {
+    res.json({ ok: true, bookingId, teeSlotId: newTeeSlotId });
+    return;
+  }
+
+  const newSlot = await db.query.teeSlots.findFirst({
+    where: eq(teeSlots.id, newTeeSlotId),
+    with: { course: { with: { club: true } } },
+  });
+
+  if (!newSlot?.course?.club) {
+    res.status(404).json({ error: "Target slot not found" });
+    return;
+  }
+
+  if (newSlot.course.club.id !== clubId) {
+    res.status(403).json({ error: "Cannot move booking to another club" });
+    return;
+  }
+
+  if (newSlot.status !== "open") {
+    res.status(409).json({
+      code: "SLOT_NOT_OPEN",
+      error: "Target slot is not open",
+    });
+    return;
+  }
+
+  const pc = booking.playersCount;
+  const maxP = newSlot.maxPlayers ?? 4;
+  const bookedOnTarget = newSlot.bookedPlayers ?? 0;
+  if (bookedOnTarget + pc > maxP) {
+    res.status(409).json({
+      code: "SLOT_FULL",
+      error: "Target slot does not have capacity",
+    });
+    return;
+  }
+
+  try {
+    await db.transaction(async (tx) => {
+      const [dec] = await tx
+        .update(teeSlots)
+        .set({
+          bookedPlayers: sql`${teeSlots.bookedPlayers} - ${pc}`,
+        })
+        .where(
+          and(eq(teeSlots.id, oldSlot.id), gte(teeSlots.bookedPlayers, pc))
+        )
+        .returning();
+
+      if (!dec) {
+        throw new Error("DEC_FAIL");
+      }
+
+      const [inc] = await tx
+        .update(teeSlots)
+        .set({
+          bookedPlayers: sql`${teeSlots.bookedPlayers} + ${pc}`,
+        })
+        .where(
+          and(
+            eq(teeSlots.id, newTeeSlotId),
+            eq(teeSlots.status, "open"),
+            sql`${teeSlots.bookedPlayers} + ${pc} <= ${teeSlots.maxPlayers}`
+          )
+        )
+        .returning();
+
+      if (!inc) {
+        throw new Error("INC_FAIL");
+      }
+
+      await tx
+        .update(bookings)
+        .set({ teeSlotId: newTeeSlotId })
+        .where(eq(bookings.id, bookingId));
+    });
+
+    const oldDateStr = oldSlot.datetime.toISOString().split("T")[0];
+    const newDateStr = newSlot.datetime.toISOString().split("T")[0];
+    await invalidateAvailabilityCache(clubId, oldSlot.courseId, oldDateStr);
+    await invalidateAvailabilityCache(clubId, newSlot.courseId, newDateStr);
+
+    res.json({ ok: true, bookingId, teeSlotId: newTeeSlotId });
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg === "DEC_FAIL" || msg === "INC_FAIL") {
+      res.status(409).json({ error: "Could not move booking" });
+      return;
+    }
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.delete("/:bookingId", publicRateLimit, async (req, res) => {

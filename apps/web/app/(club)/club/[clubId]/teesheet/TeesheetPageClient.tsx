@@ -1,32 +1,43 @@
 "use client";
 
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { AddBookingModal } from "@/components/teesheet/AddBookingModal";
 import { BookingDrawer } from "@/components/teesheet/BookingDrawer";
 import { BlockSlotModal } from "@/components/teesheet/BlockSlotModal";
-import { SlotRow } from "@/components/teesheet/SlotRow";
+import {
+  BlockedSlotCell,
+  BookingSlotChip,
+  MissingSlotCell,
+  OpenSlotCell,
+} from "@/components/teesheet/SlotChip";
 import type { TeeSlotRow } from "@/components/teesheet/types";
 import { cn } from "@/lib/utils";
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { format } from "date-fns";
 import { Ban, Plus } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 
 type Course = { id: string; name: string };
 
 type Filter = "all" | "open" | "booked" | "upcoming";
+
+type CourseWithSlots = { id: string; name: string; slots: TeeSlotRow[] };
 
 function todayIsoLocal(): string {
   const d = new Date();
@@ -34,6 +45,33 @@ function todayIsoLocal(): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function slotMatchesFilter(
+  slot: TeeSlotRow,
+  filter: Filter,
+  nowMs: number
+): boolean {
+  const t = new Date(slot.datetime).getTime();
+  if (filter === "open") {
+    return slot.status === "open" && slot.bookedPlayers === 0;
+  }
+  if (filter === "booked") {
+    return slot.bookedPlayers > 0 && slot.status !== "blocked";
+  }
+  if (filter === "upcoming") {
+    return t > nowMs;
+  }
+  return true;
+}
+
+function pctBooked(slots: TeeSlotRow[]): number {
+  const total = slots.length;
+  if (total === 0) return 0;
+  const booked = slots.filter(
+    (s) => s.bookedPlayers > 0 && s.status !== "blocked"
+  ).length;
+  return (booked / total) * 100;
 }
 
 export function TeesheetPageClient({
@@ -47,8 +85,9 @@ export function TeesheetPageClient({
   const dateStr = searchParams.get("date") ?? todayIsoLocal();
 
   const [courses, setCourses] = useState<Course[]>([]);
-  const [courseId, setCourseId] = useState<string>("");
-  const [slots, setSlots] = useState<TeeSlotRow[]>([]);
+  const [coursesWithSlots, setCoursesWithSlots] = useState<CourseWithSlots[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [updatedAt, setUpdatedAt] = useState<number>(Date.now());
@@ -56,8 +95,21 @@ export function TeesheetPageClient({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addSlot, setAddSlot] = useState<TeeSlotRow | null>(null);
+  const [addCourseId, setAddCourseId] = useState<string>("");
   const [blockOpen, setBlockOpen] = useState(false);
-  const [cancelId, setCancelId] = useState<string | null>(null);
+
+  /** First teesheet fetch shows the full-page loader; later refreshes (date change, etc.) stay silent. */
+  const teesheetInitialLoadRef = useRef(true);
+
+  useEffect(() => {
+    teesheetInitialLoadRef.current = true;
+  }, [clubId]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   const loadCourses = useCallback(async () => {
     const res = await fetch(`/api/clubs/${clubId}/courses`, {
@@ -66,95 +118,165 @@ export function TeesheetPageClient({
     if (!res.ok) return;
     const data = (await res.json()) as Course[];
     setCourses(data);
-    setCourseId((prev) => prev || data[0]?.id || "");
   }, [clubId]);
 
-  const loadTeesheet = useCallback(async () => {
-    if (!courseId) return;
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `/api/clubs/${clubId}/courses/${courseId}/teesheet?date=${encodeURIComponent(dateStr)}`,
-        { credentials: "include" }
-      );
-      if (!res.ok) throw new Error("teesheet");
-      const data = (await res.json()) as TeeSlotRow[];
-      setSlots(Array.isArray(data) ? data : []);
-      setUpdatedAt(Date.now());
-    } catch {
-      toast.error("Could not load tee sheet");
-    } finally {
-      setLoading(false);
-    }
-  }, [clubId, courseId, dateStr]);
+  const loadAllTeesheets = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (courses.length === 0) {
+        setCoursesWithSlots([]);
+        return;
+      }
+      const silent = opts?.silent === true;
+      if (!silent) {
+        setLoading(true);
+      }
+      try {
+        const results = await Promise.all(
+          courses.map(async (c) => {
+            const res = await fetch(
+              `/api/clubs/${clubId}/courses/${c.id}/teesheet?date=${encodeURIComponent(dateStr)}`,
+              { credentials: "include" }
+            );
+            if (!res.ok) throw new Error("teesheet");
+            const data = (await res.json()) as TeeSlotRow[];
+            return {
+              id: c.id,
+              name: c.name,
+              slots: Array.isArray(data) ? data : [],
+            };
+          })
+        );
+        setCoursesWithSlots(results);
+        setUpdatedAt(Date.now());
+      } catch {
+        toast.error("Could not load tee sheet");
+        if (!silent) {
+          setCoursesWithSlots([]);
+        }
+      } finally {
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [clubId, courses, dateStr]
+  );
 
   useEffect(() => {
     loadCourses();
   }, [loadCourses]);
 
   useEffect(() => {
-    if (courseId) loadTeesheet();
-  }, [courseId, loadTeesheet]);
+    if (courses.length === 0) return;
+    const silent = !teesheetInitialLoadRef.current;
+    teesheetInitialLoadRef.current = false;
+    loadAllTeesheets({ silent });
+  }, [courses, loadAllTeesheets]);
 
   useEffect(() => {
     const t = setInterval(() => {
-      loadTeesheet();
+      loadAllTeesheets({ silent: true });
     }, 60_000);
     return () => clearInterval(t);
-  }, [loadTeesheet]);
+  }, [loadAllTeesheets]);
 
   const nowMs = Date.now();
 
-  const filtered = useMemo(() => {
-    return slots.filter((s) => {
-      const t = new Date(s.datetime).getTime();
-      if (filter === "open") {
-        return s.status === "open" && s.bookedPlayers === 0;
+  const slotMaps = useMemo(() => {
+    const out: Record<string, Map<string, TeeSlotRow>> = {};
+    for (const c of coursesWithSlots) {
+      const m = new Map<string, TeeSlotRow>();
+      for (const s of c.slots) {
+        m.set(s.datetime, s);
       }
-      if (filter === "booked") {
-        return s.bookedPlayers > 0 && s.status !== "blocked";
-      }
-      if (filter === "upcoming") {
-        return t > nowMs;
-      }
-      return true;
-    });
-  }, [slots, filter, nowMs]);
+      out[c.id] = m;
+    }
+    return out;
+  }, [coursesWithSlots]);
 
-  const firstUpcomingIdx = filtered.findIndex(
-    (s) => new Date(s.datetime).getTime() > nowMs
+  const timeKeys = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of coursesWithSlots) {
+      for (const s of c.slots) {
+        set.add(s.datetime);
+      }
+    }
+    return [...set].sort(
+      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+    );
+  }, [coursesWithSlots]);
+
+  const visibleTimeKeys = useMemo(() => {
+    return timeKeys.filter((ts) => {
+      return coursesWithSlots.some((c) => {
+        const slot = slotMaps[c.id]?.get(ts);
+        if (!slot) return false;
+        return slotMatchesFilter(slot, filter, nowMs);
+      });
+    });
+  }, [timeKeys, coursesWithSlots, slotMaps, filter, nowMs]);
+
+  const firstUpcomingVisibleIdx = visibleTimeKeys.findIndex(
+    (ts) => new Date(ts).getTime() > nowMs
   );
 
-  const courseUtils = useMemo(() => {
-    return courses.map((c) => {
-      if (c.id !== courseId) {
-        return { ...c, pct: 0, full: false };
-      }
-      const total = slots.length;
-      const booked = slots.filter(
-        (s) => s.bookedPlayers > 0 && s.status !== "blocked"
-      ).length;
-      const pct = total === 0 ? 0 : (booked / total) * 100;
-      return { ...c, pct, full: pct >= 100 && total > 0 };
-    });
-  }, [courses, courseId, slots]);
+  const onDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over) return;
 
-  async function cancelBooking(id: string) {
-    try {
-      const res = await fetch(`/api/bookings/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("x");
-      toast.success("Booking cancelled");
-      setCancelId(null);
-      loadTeesheet();
-    } catch {
-      toast.error("Could not cancel");
-    }
-  }
+      const drag = active.data.current as
+        | {
+            type: string;
+            bookingId: string;
+            sourceSlotId: string | null;
+            playersCount: number;
+          }
+        | undefined;
+      const drop = over.data.current as
+        | { type: string; teeSlotId: string | null; courseId: string }
+        | undefined;
+
+      if (!drag || drag.type !== "booking" || !drop || drop.type !== "slot") {
+        return;
+      }
+      if (!drop.teeSlotId || !drag.sourceSlotId) {
+        toast.error("Cannot move to this slot");
+        return;
+      }
+      if (drop.teeSlotId === drag.sourceSlotId) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/bookings/${drag.bookingId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ teeSlotId: drop.teeSlotId }),
+        });
+        if (!res.ok) {
+          const err = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(
+            typeof err.error === "string" ? err.error : "Move failed"
+          );
+        }
+        toast.success("Booking moved");
+        loadAllTeesheets({ silent: true });
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Could not move booking"
+        );
+      }
+    },
+    [loadAllTeesheets]
+  );
 
   const secs = Math.floor((Date.now() - updatedAt) / 1000);
+
+  const nCols = Math.max(1, coursesWithSlots.length);
 
   return (
     <>
@@ -177,6 +299,7 @@ export function TeesheetPageClient({
               size="sm"
               onClick={() => {
                 setAddSlot(null);
+                setAddCourseId(coursesWithSlots[0]?.id ?? "");
                 setAddOpen(true);
               }}
             >
@@ -189,27 +312,6 @@ export function TeesheetPageClient({
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-3 border-b border-stone bg-warm-white px-6 py-3">
-          <div className="flex flex-wrap gap-4">
-            {courseUtils.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                disabled={c.full}
-                onClick={() => setCourseId(c.id)}
-                className={cn(
-                  "border-b-2 pb-1 text-sm transition-colors",
-                  c.id === courseId
-                    ? "border-fairway font-semibold text-fairway"
-                    : c.full
-                      ? "cursor-not-allowed border-transparent text-muted"
-                      : "border-transparent text-muted hover:text-ink"
-                )}
-              >
-                {c.name}
-                {c.full ? " — full" : ""}
-              </button>
-            ))}
-          </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {(["all", "open", "booked", "upcoming"] as const).map((f) => (
               <button
@@ -226,74 +328,164 @@ export function TeesheetPageClient({
                 {f}
               </button>
             ))}
-            <span className="text-xs text-muted">
-              Updated {secs}s ago
-            </span>
+            <span className="text-xs text-muted">Updated {secs}s ago</span>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-warm-white">
+        <div className="min-h-0 flex-1 overflow-auto bg-warm-white">
           {loading ? (
             <p className="p-6 text-muted">Loading…</p>
+          ) : coursesWithSlots.length === 0 ? (
+            <p className="p-6 text-muted">No courses configured.</p>
           ) : (
-            <>
-              <div className="grid grid-cols-[80px_1fr_110px_100px_120px_110px] border-b border-stone bg-cream/50 px-6 py-2 text-[10px] font-bold uppercase tracking-widest text-muted lg:grid-cols-[80px_1fr_110px_100px_120px_110px]">
-                <span>Time</span>
-                <span>Guest</span>
-                <span>Players</span>
-                <span className="hidden lg:block">Price</span>
-                <span>Status</span>
-                <span className="text-right">Actions</span>
-              </div>
-              {filtered.map((slot, i) => (
-                <div key={slot.datetime + String(i)}>
-                  {firstUpcomingIdx === i ? (
-                    <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-green-200 bg-green-50 px-6 py-1.5">
-                      <div className="h-2 w-2 rounded-full bg-grass" />
-                      <span className="text-xs font-bold text-green-700">
-                        Now
-                      </span>
-                      <span className="font-mono text-xs text-green-700">
-                        {format(new Date(), "h:mm a")}
-                      </span>
-                    </div>
-                  ) : null}
-                  <SlotRow
-                    slot={slot}
-                    nowMs={nowMs}
-                    onRowClick={
-                      slot.bookingId
-                        ? () => {
-                            setDrawerId(slot.bookingId!);
-                            setDrawerOpen(true);
-                          }
-                        : undefined
-                    }
-                    onBook={
-                      slot.id
-                        ? () => {
-                            setAddSlot(slot);
-                            setAddOpen(true);
-                          }
-                        : undefined
-                    }
-                    onCheckIn={
-                      slot.bookingId
-                        ? () => {
-                            setDrawerId(slot.bookingId!);
-                            setDrawerOpen(true);
-                          }
-                        : undefined
-                    }
-                    onCancel={
-                      slot.bookingId
-                        ? () => setCancelId(slot.bookingId!)
-                        : undefined
-                    }
-                  />
+            <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+              <div className="min-w-[min(100%,520px)] px-4 pb-6 pt-2 lg:min-w-[720px]">
+                <div
+                  className="grid gap-x-2 gap-y-0"
+                  style={{
+                    gridTemplateColumns: `72px repeat(${nCols}, minmax(120px, 1fr))`,
+                  }}
+                >
+                  <div className="sticky left-0 z-30 border-b border-stone bg-cream/80 px-1 py-2 text-[10px] font-bold uppercase tracking-widest text-muted backdrop-blur-sm" />
+                  {coursesWithSlots.map((c) => {
+                    const pct = pctBooked(c.slots);
+                    return (
+                      <div
+                        key={c.id}
+                        className="sticky top-0 z-20 border-b border-stone bg-cream/80 px-2 py-2 text-center backdrop-blur-sm"
+                      >
+                        <div className="text-xs font-bold text-ink">
+                          {c.name}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-muted tabular-nums">
+                          {Math.round(pct)}% booked
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {visibleTimeKeys.map((ts, rowIdx) => {
+                    const rowPast = new Date(ts).getTime() < nowMs;
+                    return (
+                      <Fragment key={ts}>
+                        {firstUpcomingVisibleIdx === rowIdx ? (
+                          <div className="contents">
+                            <div
+                              className="col-span-full flex items-center gap-2 border-b border-green-200 bg-green-50 px-4 py-1.5"
+                              style={{ gridColumn: "1 / -1" }}
+                            >
+                              <div className="h-2 w-2 rounded-full bg-grass" />
+                              <span className="text-xs font-bold text-green-700">
+                                Now
+                              </span>
+                              <span className="font-mono text-xs text-green-700">
+                                {format(new Date(), "h:mm a")}
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="contents">
+                          <div
+                            className={cn(
+                              "sticky left-0 z-10 flex items-start border-b border-stone/60 bg-warm-white py-2 pl-1 pr-2 font-mono text-[11px] tabular-nums text-ink",
+                              rowPast && "text-muted"
+                            )}
+                          >
+                            {format(new Date(ts), "h:mm a")}
+                          </div>
+
+                          {coursesWithSlots.map((c) => {
+                            const slot = slotMaps[c.id]?.get(ts);
+                            if (!slot) {
+                              return (
+                                <div
+                                  key={`${c.id}-${ts}`}
+                                  className="border-b border-stone/60 py-1"
+                                >
+                                  <MissingSlotCell isPast={rowPast} />
+                                </div>
+                              );
+                            }
+
+                            const isBlocked = slot.status === "blocked";
+                            const isBooked =
+                              slot.bookedPlayers > 0 &&
+                              slot.status !== "blocked" &&
+                              !!slot.bookingId;
+
+                            if (isBlocked) {
+                              return (
+                                <div
+                                  key={`${c.id}-${ts}`}
+                                  className="border-b border-stone/60 py-1"
+                                >
+                                  <BlockedSlotCell isPast={rowPast} />
+                                </div>
+                              );
+                            }
+
+                            if (isBooked && slot.bookingId) {
+                              return (
+                                <div
+                                  key={`${c.id}-${ts}`}
+                                  className="border-b border-stone/60 py-1"
+                                >
+                                  <BookingSlotChip
+                                    slot={slot}
+                                    isPast={rowPast}
+                                    onOpenBooking={() => {
+                                      setDrawerId(slot.bookingId!);
+                                      setDrawerOpen(true);
+                                    }}
+                                  />
+                                </div>
+                              );
+                            }
+
+                            if (
+                              slot.bookedPlayers > 0 &&
+                              slot.status !== "blocked" &&
+                              !slot.bookingId
+                            ) {
+                              return (
+                                <div
+                                  key={`${c.id}-${ts}`}
+                                  className="border-b border-stone/60 py-1"
+                                >
+                                  <div className="flex min-h-[52px] items-center rounded-md border border-stone bg-cream/50 px-2 text-xs text-muted">
+                                    Booked (no ref)
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={`${c.id}-${ts}`}
+                                className="border-b border-stone/60 py-1"
+                              >
+                                <OpenSlotCell
+                                  slot={slot}
+                                  isPast={rowPast}
+                                  courseId={c.id}
+                                  datetimeIso={ts}
+                                  onBook={() => {
+                                    setAddSlot(slot);
+                                    setAddCourseId(c.id);
+                                    setAddOpen(true);
+                                  }}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Fragment>
+                    );
+                  })}
                 </div>
-              ))}
-            </>
+              </div>
+            </DndContext>
           )}
         </div>
       </div>
@@ -305,7 +497,7 @@ export function TeesheetPageClient({
           setDrawerOpen(false);
           setDrawerId(null);
         }}
-        onAfterChange={loadTeesheet}
+        onAfterChange={() => loadAllTeesheets({ silent: true })}
       />
 
       <AddBookingModal
@@ -316,7 +508,8 @@ export function TeesheetPageClient({
         dateStr={dateStr}
         courses={courses}
         initialSlot={addSlot}
-        onSuccess={() => loadTeesheet()}
+        initialCourseId={addCourseId || undefined}
+        onSuccess={() => loadAllTeesheets({ silent: true })}
       />
 
       <BlockSlotModal
@@ -324,30 +517,10 @@ export function TeesheetPageClient({
         open={blockOpen}
         onOpenChange={setBlockOpen}
         courses={courses}
-        defaultCourseId={courseId || courses[0]?.id || ""}
+        defaultCourseId={coursesWithSlots[0]?.id || courses[0]?.id || ""}
         defaultDate={dateStr}
-        onBlocked={loadTeesheet}
+        onBlocked={() => loadAllTeesheets({ silent: true })}
       />
-
-      <AlertDialog open={!!cancelId} onOpenChange={() => setCancelId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Back</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-600/90"
-              onClick={() => cancelId && cancelBooking(cancelId)}
-            >
-              Cancel booking
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

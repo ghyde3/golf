@@ -8,6 +8,9 @@ export type TeeSlotRow = {
   slotType: string;
   bookingId?: string | null;
   bookingRef?: string | null;
+  guestName?: string | null;
+  /** Players in the booking (for capacity when dragging); may equal bookedPlayers when one booking per slot */
+  bookingPlayersCount?: number | null;
 };
 
 export type BookingDetail = {

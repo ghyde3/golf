@@ -29,6 +29,39 @@ export async function GET(
   });
 }
 
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: { bookingId: string } }
+) {
+  const session = await auth();
+  const token = session?.accessToken;
+  if (!token) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await req.text();
+  const res = await fetch(
+    `${apiProxyBase()}/api/bookings/${ctx.params.bookingId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body,
+      cache: "no-store",
+    }
+  );
+
+  const text = await res.text();
+  return new Response(text, {
+    status: res.status,
+    headers: {
+      "Content-Type": res.headers.get("content-type") || "application/json",
+    },
+  });
+}
+
 export async function DELETE(
   req: NextRequest,
   ctx: { params: { bookingId: string } }

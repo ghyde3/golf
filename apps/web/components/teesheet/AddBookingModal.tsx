@@ -54,6 +54,7 @@ export function AddBookingModal({
   dateStr,
   courses,
   initialSlot,
+  initialCourseId,
   onSuccess,
 }: {
   clubId: string;
@@ -63,6 +64,8 @@ export function AddBookingModal({
   dateStr: string;
   courses: { id: string; name: string }[];
   initialSlot: TeeSlotRow | null;
+  /** When opening "Add booking", pre-select this course in the picker */
+  initialCourseId?: string;
   onSuccess: () => void;
 }) {
   const modeA = initialSlot != null;
@@ -91,10 +94,14 @@ export function AddBookingModal({
       setPhone("");
       setNotes("");
       setPlayers(2);
-      setCourseId(courses[0]?.id ?? "");
+      setCourseId(
+        initialCourseId && courses.some((c) => c.id === initialCourseId)
+          ? initialCourseId
+          : (courses[0]?.id ?? "")
+      );
       setPickerDate(dateStr);
     }
-  }, [open, initialSlot, courses, dateStr]);
+  }, [open, initialSlot, courses, dateStr, initialCourseId]);
 
   useEffect(() => {
     if (!open || modeA || !courseId) return;

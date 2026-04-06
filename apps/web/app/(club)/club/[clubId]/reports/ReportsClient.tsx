@@ -36,8 +36,7 @@ export function ReportsClient({
       <SetTopBar title="Reports" />
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
         <div>
-          <h2 className="font-display text-xl text-ink">Reports</h2>
-          <p className="mt-1 text-sm text-muted">
+          <p className="max-w-2xl text-sm text-muted">
             Booking activity for the last {data.days} days (UTC), matching how
             dashboard counts are computed.
           </p>

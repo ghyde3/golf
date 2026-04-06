@@ -99,8 +99,7 @@ export function CoursesClient({
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-xl text-ink">Courses</h2>
-            <p className="mt-1 text-sm text-muted">
+            <p className="max-w-xl text-sm text-muted">
               Manage the courses available for tee time bookings.
             </p>
           </div>

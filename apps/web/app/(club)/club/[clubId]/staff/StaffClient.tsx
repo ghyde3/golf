@@ -100,8 +100,7 @@ export function StaffClient({
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="font-display text-xl text-ink">Staff</h2>
-            <p className="mt-1 text-sm text-muted">
+            <p className="max-w-xl text-sm text-muted">
               Manage who has access to this club&apos;s management panel.
             </p>
           </div>

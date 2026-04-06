@@ -128,8 +128,7 @@ export function SettingsClient({
       <SetTopBar title="Settings" />
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
         <div>
-          <h2 className="font-display text-xl text-ink">Settings</h2>
-          <p className="mt-1 text-sm text-muted">
+          <p className="max-w-2xl text-sm text-muted">
             Club operational settings. Changes create a new versioned config row
             effective from the date you choose.
           </p>

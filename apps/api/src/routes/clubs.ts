@@ -150,4 +150,83 @@ router.get("/bookings", async (req, res) => {
   });
 });
 
+/** Daily booking counts for UTC calendar days (same club scope as GET /bookings). */
+router.get("/reports", async (req, res) => {
+  const clubId = paramClubId(req);
+  if (!clubId) {
+    res.status(400).json({ error: "clubId required" });
+    return;
+  }
+
+  const clubExists = await db.query.clubs.findFirst({
+    where: eq(clubs.id, clubId),
+    columns: { id: true },
+  });
+  if (!clubExists) {
+    res.status(404).json({ error: "Club not found" });
+    return;
+  }
+
+  const rawDays = req.query.days;
+  let numDays = 7;
+  if (typeof rawDays === "string") {
+    const n = Number.parseInt(rawDays, 10);
+    if (!Number.isNaN(n)) numDays = Math.min(31, Math.max(1, n));
+  }
+
+  const now = new Date();
+  const todayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+
+  const series: {
+    date: string;
+    bookings: number;
+    players: number;
+  }[] = [];
+
+  let totalBookings = 0;
+  let totalPlayers = 0;
+
+  for (let offset = numDays - 1; offset >= 0; offset--) {
+    const dayStart = new Date(todayUtc);
+    dayStart.setUTCDate(dayStart.getUTCDate() - offset);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    const [row] = await db
+      .select({
+        bookings: sql<number>`count(*)::int`,
+        players: sql<number>`coalesce(sum(${bookings.playersCount}), 0)::int`,
+      })
+      .from(bookings)
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          isNull(bookings.deletedAt),
+          eq(courses.clubId, clubId),
+          gte(bookings.createdAt, dayStart),
+          lt(bookings.createdAt, dayEnd)
+        )
+      );
+
+    const b = row?.bookings ?? 0;
+    const p = row?.players ?? 0;
+    totalBookings += b;
+    totalPlayers += p;
+    series.push({
+      date: dayStart.toISOString().slice(0, 10),
+      bookings: b,
+      players: p,
+    });
+  }
+
+  res.json({
+    days: numDays,
+    series,
+    totals: { bookings: totalBookings, players: totalPlayers },
+  });
+});
+
 export default router;

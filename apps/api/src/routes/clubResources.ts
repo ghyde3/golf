@@ -5,7 +5,7 @@ type ClubParams = { clubId: string; courseId?: string };
 function clubParams(req: Request): ClubParams {
   return req.params as ClubParams;
 }
-import { eq, desc, and, asc } from "drizzle-orm";
+import { eq, desc, and, asc, inArray } from "drizzle-orm";
 import {
   db,
   clubConfig,
@@ -266,6 +266,27 @@ router.post(
     res.status(201).json({ id: row.id, status: row.status });
   }
 );
+
+router.get("/staff", async (req, res) => {
+  const clubId = clubParams(req).clubId;
+  const rows = await db.query.userRoles.findMany({
+    where: and(
+      eq(userRoles.clubId, clubId),
+      inArray(userRoles.role, ["staff", "club_admin"])
+    ),
+    with: { user: true },
+    orderBy: [asc(userRoles.role)],
+  });
+  res.json(
+    rows.map((r) => ({
+      id: r.user.id,
+      name: r.user.name,
+      email: r.user.email,
+      role: r.role,
+      pending: r.user.passwordHash === null,
+    }))
+  );
+});
 
 router.post(
   "/staff/invite",

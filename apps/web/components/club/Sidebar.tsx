@@ -10,6 +10,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@teetimes/types";
 import {
+  BarChart3,
   BookOpen,
   Calendar,
   ExternalLink,
@@ -184,6 +185,7 @@ export function Sidebar({
     { href: `${base}/courses`, label: "Courses", icon: <Flag /> },
     { href: `${base}/staff`, label: "Staff", icon: <Users /> },
     { href: `${base}/settings`, label: "Settings", icon: <Settings /> },
+    { href: `${base}/reports`, label: "Reports", icon: <BarChart3 /> },
   ];
 
   const isActive = (href: string) =>

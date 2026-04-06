@@ -1,14 +1,19 @@
-"use client";
+import { clubApi } from "@/lib/admin-api";
+import { StaffClient, type StaffRow } from "./StaffClient";
 
-import { SetTopBar } from "@/components/club/ClubTopBarContext";
-
-export default function ClubStaffStubPage() {
-  return (
-    <>
-      <SetTopBar title="Staff" />
-      <div className="p-6">
-        <h2 className="font-display text-xl text-ink">Staff</h2>
-      </div>
-    </>
-  );
+export default async function ClubStaffPage({
+  params,
+}: {
+  params: { clubId: string };
+}) {
+  const res = await clubApi(params.clubId, "/staff");
+  if (!res.ok) {
+    return (
+      <p className="p-6 text-muted">
+        Could not load staff. You may not have access.
+      </p>
+    );
+  }
+  const staff = (await res.json()) as StaffRow[];
+  return <StaffClient clubId={params.clubId} staff={staff} />;
 }

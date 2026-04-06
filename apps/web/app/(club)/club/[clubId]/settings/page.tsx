@@ -1,14 +1,19 @@
-"use client";
+import { clubApi } from "@/lib/admin-api";
+import { SettingsClient, type ConfigRow } from "./SettingsClient";
 
-import { SetTopBar } from "@/components/club/ClubTopBarContext";
-
-export default function ClubSettingsStubPage() {
-  return (
-    <>
-      <SetTopBar title="Settings" />
-      <div className="p-6">
-        <h2 className="font-display text-xl text-ink">Settings</h2>
-      </div>
-    </>
-  );
+export default async function ClubSettingsPage({
+  params,
+}: {
+  params: { clubId: string };
+}) {
+  const res = await clubApi(params.clubId, "/config");
+  if (!res.ok) {
+    return (
+      <p className="p-6 text-muted">
+        Could not load settings. You may not have access.
+      </p>
+    );
+  }
+  const configs = (await res.json()) as ConfigRow[];
+  return <SettingsClient clubId={params.clubId} configs={configs} />;
 }

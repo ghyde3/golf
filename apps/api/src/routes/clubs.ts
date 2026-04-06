@@ -1,6 +1,19 @@
 import { Router, type Request } from "express";
 import { db, clubs, clubConfig, bookings, teeSlots, courses } from "@teetimes/db";
-import { eq, desc, sql, and, gte, lt, isNull, inArray } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  asc,
+  sql,
+  and,
+  gte,
+  lt,
+  isNull,
+  inArray,
+  or,
+  ilike,
+  type SQL,
+} from "drizzle-orm";
 import { authenticate, requireClubAccess } from "../middleware/auth";
 
 const router = Router({ mergeParams: true });
@@ -82,7 +95,35 @@ router.get("/summary", async (req, res) => {
   });
 });
 
-/** Same “today” window and club scope as `bookingsToday` in GET /summary (UTC calendar day, createdAt). */
+function utcDayStart(isoDate: string): Date {
+  const [y, m, d] = isoDate.split("-").map((x) => Number.parseInt(x, 10));
+  if (
+    Number.isNaN(y) ||
+    Number.isNaN(m) ||
+    Number.isNaN(d) ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)
+  ) {
+    throw new Error("invalid date");
+  }
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function utcDayEndExclusive(isoDate: string): Date {
+  const start = utcDayStart(isoDate);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 1);
+  return end;
+}
+
+/** Escape `%` / `_` / `\` for use inside ILIKE patterns (literal match). */
+function escapeLikePattern(user: string): string {
+  return user
+    .replace(/\\/g, "\\\\")
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_");
+}
+
+/** Same club scope as `bookingsToday` in GET /summary. Default date range: UTC calendar day on `createdAt` (today if `from`/`to` omitted). */
 router.get("/bookings", async (req, res) => {
   const clubId = paramClubId(req);
   if (!clubId) {
@@ -100,11 +141,136 @@ router.get("/bookings", async (req, res) => {
   }
 
   const now = new Date();
-  const dayStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+
+  const rawFrom = req.query.from;
+  const rawTo = req.query.to;
+  const fromStr =
+    typeof rawFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawFrom)
+      ? rawFrom
+      : todayStr;
+  const toStr =
+    typeof rawTo === "string" && /^\d{4}-\d{2}-\d{2}$/.test(rawTo)
+      ? rawTo
+      : fromStr;
+
+  let rangeStart: Date;
+  let rangeEnd: Date;
+  try {
+    rangeStart = utcDayStart(fromStr);
+    rangeEnd = utcDayEndExclusive(toStr);
+  } catch {
+    res.status(400).json({ error: "Invalid from/to (use YYYY-MM-DD)" });
+    return;
+  }
+
+  if (rangeEnd <= rangeStart) {
+    res.status(400).json({ error: "`to` must be on or after `from`" });
+    return;
+  }
+
+  const rangeField =
+    req.query.range === "tee" ? ("tee" as const) : ("created" as const);
+
+  const page = Math.max(1, Number.parseInt(String(req.query.page ?? "1"), 10) || 1);
+  const limit = Math.min(
+    100,
+    Math.max(1, Number.parseInt(String(req.query.limit ?? "25"), 10) || 25)
   );
-  const dayEnd = new Date(dayStart);
-  dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+  const sortRaw = String(req.query.sort ?? "createdAt");
+  const sortKey =
+    sortRaw === "teeTime" ||
+    sortRaw === "guestName" ||
+    sortRaw === "bookingRef" ||
+    sortRaw === "courseName" ||
+    sortRaw === "playersCount" ||
+    sortRaw === "status" ||
+    sortRaw === "createdAt"
+      ? sortRaw
+      : "createdAt";
+
+  const orderDir = req.query.order === "asc" ? "asc" : "desc";
+
+  const qRaw = req.query.q;
+  const q =
+    typeof qRaw === "string" && qRaw.trim().length > 0 ? qRaw.trim() : "";
+
+  const statusRaw = req.query.status;
+  const statusFilter =
+    typeof statusRaw === "string" && statusRaw.trim().length > 0
+      ? statusRaw.trim()
+      : "";
+
+  const courseRaw = req.query.courseId;
+  const courseFilter =
+    typeof courseRaw === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      courseRaw
+    )
+      ? courseRaw
+      : "";
+
+  const extra: SQL[] = [];
+
+  extra.push(isNull(bookings.deletedAt));
+  extra.push(eq(courses.clubId, clubId));
+
+  if (rangeField === "created") {
+    extra.push(gte(bookings.createdAt, rangeStart));
+    extra.push(lt(bookings.createdAt, rangeEnd));
+  } else {
+    extra.push(gte(teeSlots.datetime, rangeStart));
+    extra.push(lt(teeSlots.datetime, rangeEnd));
+  }
+
+  if (q) {
+    const pattern = `%${escapeLikePattern(q)}%`;
+    extra.push(
+      or(
+        ilike(bookings.bookingRef, pattern),
+        ilike(bookings.guestEmail, pattern),
+        ilike(bookings.guestName, pattern)
+      )!
+    );
+  }
+
+  if (statusFilter) {
+    extra.push(eq(bookings.status, statusFilter));
+  }
+
+  if (courseFilter) {
+    extra.push(eq(courses.id, courseFilter));
+  }
+
+  const whereClause = and(...extra);
+
+  const sortExpr =
+    sortKey === "teeTime"
+      ? teeSlots.datetime
+      : sortKey === "guestName"
+        ? bookings.guestName
+        : sortKey === "bookingRef"
+          ? bookings.bookingRef
+          : sortKey === "courseName"
+            ? courses.name
+            : sortKey === "playersCount"
+              ? bookings.playersCount
+              : sortKey === "status"
+                ? bookings.status
+                : bookings.createdAt;
+
+  const orderCol =
+    orderDir === "asc" ? asc(sortExpr) : desc(sortExpr);
+
+  const [countRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+    .where(whereClause);
+
+  const total = countRow?.c ?? 0;
 
   const rows = await db
     .select({
@@ -122,15 +288,10 @@ router.get("/bookings", async (req, res) => {
     .from(bookings)
     .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
     .innerJoin(courses, eq(teeSlots.courseId, courses.id))
-    .where(
-      and(
-        isNull(bookings.deletedAt),
-        eq(courses.clubId, clubId),
-        gte(bookings.createdAt, dayStart),
-        lt(bookings.createdAt, dayEnd)
-      )
-    )
-    .orderBy(desc(bookings.createdAt));
+    .where(whereClause)
+    .orderBy(orderCol)
+    .limit(limit)
+    .offset((page - 1) * limit);
 
   res.json({
     bookings: rows.map((r) => ({
@@ -147,6 +308,9 @@ router.get("/bookings", async (req, res) => {
         courseName: r.courseName,
       },
     })),
+    total,
+    page,
+    limit,
   });
 });
 

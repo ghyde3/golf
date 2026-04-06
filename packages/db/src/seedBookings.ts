@@ -8,12 +8,21 @@ import { eq, inArray, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
-import { clubs, courses, teeSlots, clubConfig } from "./schema";
+import {
+  clubs,
+  courses,
+  teeSlots,
+  clubConfig,
+  bookings,
+  bookingPlayers,
+} from "./schema";
 import { resolveConfig, resolveHours } from "./seed/configResolverForSeed";
 import { generateSlots } from "./seed/slotGenForSeed";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client, { schema });
+
+const CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 function effFrom(v: unknown): string {
   if (typeof v === "string") return v.slice(0, 10);
@@ -27,152 +36,262 @@ function rng(seed: number) {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
-async function runSeedBookings() {
-  console.log("Seeding booking density tee slots...");
+function bookingRefFromSeq(clubSlug: string, seq: number): string {
+  const prefix = clubSlug.replace(/-/g, "").slice(0, 4).toUpperCase();
+  let n = seq;
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += CHARSET[n % CHARSET.length];
+    n = Math.floor(n / CHARSET.length);
+  }
+  return `${prefix}-${code}`;
+}
 
-  const club = await db.query.clubs.findFirst({
-    where: eq(clubs.slug, "pinebrook"),
-    with: { courses: true, configs: { orderBy: [desc(clubConfig.effectiveFrom)] } },
+const FIRST_NAMES = [
+  "James",
+  "Maria",
+  "Robert",
+  "Jennifer",
+  "Michael",
+  "Linda",
+  "David",
+  "Patricia",
+  "William",
+  "Elizabeth",
+  "Richard",
+  "Susan",
+  "Thomas",
+  "Jessica",
+  "Daniel",
+  "Sarah",
+  "Matthew",
+  "Karen",
+  "Andrew",
+  "Nancy",
+];
+
+const LAST_NAMES = [
+  "Smith",
+  "Johnson",
+  "Williams",
+  "Brown",
+  "Jones",
+  "Garcia",
+  "Miller",
+  "Davis",
+  "Rodriguez",
+  "Martinez",
+  "Wilson",
+  "Anderson",
+  "Taylor",
+  "Thomas",
+  "Moore",
+  "Jackson",
+  "Martin",
+  "Lee",
+  "Thompson",
+  "White",
+];
+
+function pickPlayersCount(rand: () => number, holes: number): number {
+  const r = rand();
+  if (holes === 9) {
+    if (r < 0.38) return 2;
+    if (r < 0.62) return 4;
+    if (r < 0.82) return 3;
+    return 1;
+  }
+  if (r < 0.44) return 4;
+  if (r < 0.69) return 2;
+  if (r < 0.88) return 3;
+  return 1;
+}
+
+function slotFillProbability(
+  rand: () => number,
+  hourEt: number,
+  dayOfWeek: number,
+  courseIndex: number,
+  courseCount: number
+): number {
+  let p = 0.11;
+  if (dayOfWeek === 0 || dayOfWeek === 6) p += 0.14;
+  if (hourEt >= 6 && hourEt <= 9) p += 0.2;
+  else if (hourEt >= 10 && hourEt <= 11) p += 0.09;
+  else if (hourEt >= 12 && hourEt <= 13) p += 0.06;
+  else if (hourEt >= 14 && hourEt <= 16) p += 0.04;
+  if (courseIndex === 0) p += 0.06;
+  if (courseCount > 2 && courseIndex >= 2) p -= 0.03;
+  p += (rand() - 0.5) * 0.06;
+  return Math.min(0.82, Math.max(0.04, p));
+}
+
+async function clearPersistedSlotsAndBookings() {
+  const allCourses = await db.select({ id: courses.id }).from(courses);
+  const courseIds = allCourses.map((c) => c.id);
+  if (courseIds.length === 0) {
+    throw new Error("No courses in database — run pnpm seed first");
+  }
+
+  const existingSlots = await db
+    .select({ id: teeSlots.id })
+    .from(teeSlots)
+    .where(inArray(teeSlots.courseId, courseIds));
+
+  const slotIds = existingSlots.map((s) => s.id);
+  if (slotIds.length === 0) return;
+
+  const bookingRows = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(inArray(bookings.teeSlotId, slotIds));
+
+  const bookingIds = bookingRows.map((b) => b.id);
+  if (bookingIds.length > 0) {
+    await db
+      .delete(bookingPlayers)
+      .where(inArray(bookingPlayers.bookingId, bookingIds));
+    await db.delete(bookings).where(inArray(bookings.id, bookingIds));
+  }
+  await db.delete(teeSlots).where(inArray(teeSlots.id, slotIds));
+}
+
+async function runSeedBookings() {
+  console.log("Seeding tee slots and bookings (next 4 days, all clubs)...");
+
+  await clearPersistedSlotsAndBookings();
+
+  const allClubs = await db.query.clubs.findMany({
+    with: {
+      courses: true,
+      configs: { orderBy: [desc(clubConfig.effectiveFrom)] },
+    },
   });
 
-  if (!club || club.courses.length === 0) {
-    throw new Error("Run pnpm seed first (pinebrook club missing)");
+  if (allClubs.length === 0) {
+    throw new Error("No clubs — run pnpm seed first");
   }
-
-  const byName = Object.fromEntries(club.courses.map((c) => [c.name, c]));
-  const champ = byName["The Championship"];
-  const meadows = byName["The Meadows"];
-  const pines = byName["The Pines"];
-  const lakes = byName["The Lakes"];
-  if (!champ || !meadows || !pines || !lakes) {
-    throw new Error("Expected four seed courses on pinebrook");
-  }
-
-  const courseIds = [champ.id, meadows.id, pines.id, lakes.id];
-  await db.delete(teeSlots).where(inArray(teeSlots.courseId, courseIds));
 
   const start = startOfDay(new Date());
-  const end = addDays(start, 7);
+  const end = addDays(start, 3);
   const days = eachDayOfInterval({ start, end });
 
-  const configRows = club.configs.map((c) => ({
-    ...c,
-    effectiveFrom: effFrom(c.effectiveFrom),
-    slotIntervalMinutes: c.slotIntervalMinutes,
-    openTime: c.openTime as string | null,
-    closeTime: c.closeTime as string | null,
-    schedule: c.schedule,
-    timezone: c.timezone,
-  }));
+  let refSeq = 1_000_000;
+  let seedCounter = 901;
 
-  const tz = configRows[0]?.timezone ?? "America/New_York";
-  let seedCounter = 42;
+  for (const club of allClubs) {
+    if (club.courses.length === 0) continue;
 
-  for (const day of days) {
-    const dateStr = format(day, "yyyy-MM-dd");
-    const targetDate = new Date(dateStr + "T12:00:00Z");
-    const config = resolveConfig(configRows, targetDate);
-    const dayOfWeek = targetDate.getUTCDay();
-    const hours = resolveHours(config, dayOfWeek);
-    const slotInterval = config.slotIntervalMinutes ?? 10;
+    const configRows = club.configs.map((c) => ({
+      ...c,
+      effectiveFrom: effFrom(c.effectiveFrom),
+      slotIntervalMinutes: c.slotIntervalMinutes,
+      openTime: c.openTime as string | null,
+      closeTime: c.closeTime as string | null,
+      schedule: c.schedule,
+      timezone: c.timezone,
+    }));
 
-    const slotTimes = generateSlots(
-      {
-        openTime: hours.openTime,
-        closeTime: hours.closeTime,
-        slotIntervalMinutes: slotInterval,
-        timezone: tz,
-      },
-      dateStr
+    const tz = configRows[0]?.timezone ?? "America/New_York";
+    const slug = club.slug;
+    const sortedCourses = [...club.courses].sort((a, b) =>
+      a.name.localeCompare(b.name)
     );
 
-    const rand = rng(seedCounter++);
+    for (const day of days) {
+      const dateStr = format(day, "yyyy-MM-dd");
+      const targetDate = new Date(dateStr + "T12:00:00Z");
+      const config = resolveConfig(configRows, targetDate);
+      const dayOfWeek = targetDate.getUTCDay();
+      const hours = resolveHours(config, dayOfWeek);
+      const slotInterval = config.slotIntervalMinutes ?? 10;
 
-    const inserts: {
-      courseId: string;
-      datetime: Date;
-      maxPlayers: number;
-      bookedPlayers: number;
-      status: string;
-      slotType: string;
-    }[] = [];
+      const slotTimes = generateSlots(
+        {
+          openTime: hours.openTime,
+          closeTime: hours.closeTime,
+          slotIntervalMinutes: slotInterval,
+          timezone: tz,
+        },
+        dateStr
+      );
 
-    for (const dt of slotTimes) {
-      const hourEt = Number(formatInTimeZone(dt, tz, "H"));
-      const morning = hourEt < 10;
+      for (let ci = 0; ci < sortedCourses.length; ci++) {
+        const course = sortedCourses[ci];
+        const rand = rng(seedCounter++);
 
-      for (const [course, meta] of [
-        [champ, "champ"] as const,
-        [meadows, "meadows"] as const,
-        [pines, "pines"] as const,
-        [lakes, "lakes"] as const,
-      ]) {
-        if (meta === "champ") {
-          inserts.push({
-            courseId: course.id,
-            datetime: dt,
-            maxPlayers: 4,
-            bookedPlayers: 4,
-            status: "open",
-            slotType: "18hole",
-          });
-          continue;
-        }
+        for (const dt of slotTimes) {
+          const hourEt = Number(formatInTimeZone(dt, tz, "H"));
+          const fillP = slotFillProbability(
+            rand,
+            hourEt,
+            dayOfWeek,
+            ci,
+            sortedCourses.length
+          );
+          if (rand() >= fillP) continue;
 
-        if (meta === "meadows") {
-          if (rand() < 0.14) {
-            const booked = rand() < 0.5 ? 1 : 2;
-            inserts.push({
+          const players = pickPlayersCount(rand, course.holes);
+          const slotType = course.holes === 9 ? "9hole" : "18hole";
+          const paymentStatus = rand() < 0.14 ? "paid" : "unpaid";
+
+          const [slotRow] = await db
+            .insert(teeSlots)
+            .values({
               courseId: course.id,
               datetime: dt,
               maxPlayers: 4,
-              bookedPlayers: booked,
+              bookedPlayers: players,
               status: "open",
-              slotType: "18hole",
+              slotType,
+            })
+            .returning();
+
+          if (!slotRow) continue;
+
+          const ref = bookingRefFromSeq(slug, refSeq++);
+          const guestName =
+            FIRST_NAMES[Math.floor(rand() * FIRST_NAMES.length)] +
+            " " +
+            LAST_NAMES[Math.floor(rand() * LAST_NAMES.length)];
+
+          const [bookingRow] = await db
+            .insert(bookings)
+            .values({
+              bookingRef: ref,
+              teeSlotId: slotRow.id,
+              guestName,
+              guestEmail: `guest+${ref.replace(/[^A-Z0-9]/gi, "")}@example.com`,
+              playersCount: players,
+              notes:
+                rand() < 0.08
+                  ? "Riding, cart path only if wet."
+                  : rand() < 0.05
+                    ? "First time visiting — meet at starter."
+                    : null,
+              status: "confirmed",
+              paymentStatus,
+            })
+            .returning();
+
+          if (!bookingRow) continue;
+
+          for (let p = 0; p < players; p++) {
+            const nm =
+              FIRST_NAMES[Math.floor(rand() * FIRST_NAMES.length)] +
+              " " +
+              LAST_NAMES[Math.floor(rand() * LAST_NAMES.length)];
+            await db.insert(bookingPlayers).values({
+              bookingId: bookingRow.id,
+              name: nm,
+              email:
+                rand() < 0.35
+                  ? `${nm.split(" ")[0].toLowerCase()}@example.com`
+                  : null,
             });
           }
-          continue;
-        }
-
-        if (meta === "pines") {
-          if (morning) {
-            inserts.push({
-              courseId: course.id,
-              datetime: dt,
-              maxPlayers: 4,
-              bookedPlayers: 4,
-              status: "open",
-              slotType: "18hole",
-            });
-          } else if (rand() < 0.08) {
-            inserts.push({
-              courseId: course.id,
-              datetime: dt,
-              maxPlayers: 4,
-              bookedPlayers: rand() < 0.5 ? 0 : 1,
-              status: "open",
-              slotType: "18hole",
-            });
-          }
-          continue;
-        }
-
-        if (meta === "lakes") {
-          const booked = Math.floor(rand() * 5);
-          inserts.push({
-            courseId: course.id,
-            datetime: dt,
-            maxPlayers: 4,
-            bookedPlayers: booked,
-            status: "open",
-            slotType: "9hole",
-          });
         }
       }
-    }
-
-    if (inserts.length > 0) {
-      await db.insert(teeSlots).values(inserts);
     }
   }
 

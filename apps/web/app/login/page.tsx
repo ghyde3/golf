@@ -7,11 +7,9 @@ import { loginAction } from "./actions";
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { next?: string; error?: string; signedOut?: string };
+  searchParams: { error?: string };
 }) {
-  const next = searchParams.next?.startsWith("/") ? searchParams.next : "/";
   const err = searchParams.error;
-  const signedOut = searchParams.signedOut === "1";
 
   return (
     <AuthShell>
@@ -22,12 +20,6 @@ export default function LoginPage({
         <p className="mt-1 text-center text-sm text-muted">
           Staff and club admin access
         </p>
-
-        {signedOut && (
-          <p className="mt-6 rounded-xl border border-stone bg-cream px-4 py-3 text-center text-sm text-ink">
-            You&apos;ve been signed out.
-          </p>
-        )}
 
         {err === "forbidden" && (
           <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900">
@@ -74,7 +66,6 @@ export default function LoginPage({
               autoComplete="current-password"
             />
           </div>
-          <input type="hidden" name="next" value={next} readOnly />
           <Button type="submit" className="w-full">
             Sign in
           </Button>

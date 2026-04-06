@@ -26,9 +26,12 @@ const labels: Record<SlotStatus, string> = {
 export function StatusBadge({
   status,
   className,
+  label,
 }: {
   status: SlotStatus;
   className?: string;
+  /** When set, overrides the default label for this status (e.g. platform club status). */
+  label?: string;
 }) {
   return (
     <span
@@ -38,7 +41,7 @@ export function StatusBadge({
         className
       )}
     >
-      {labels[status]}
+      {label ?? labels[status]}
     </span>
   );
 }

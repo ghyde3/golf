@@ -17,7 +17,7 @@ export default async function ClubShellLayout({
 }) {
   const token = await getSessionToken();
   if (!token) {
-    redirect(`/login?next=/club/${params.clubId}/dashboard`);
+    redirect("/login");
   }
 
   const res = await fetch(`${apiBaseUrl()}/api/auth/context`, {
@@ -26,7 +26,7 @@ export default async function ClubShellLayout({
   });
 
   if (!res.ok) {
-    redirect("/login?next=/club");
+    redirect("/login");
   }
 
   const ctx = (await res.json()) as Context;

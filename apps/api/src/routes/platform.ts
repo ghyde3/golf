@@ -207,6 +207,8 @@ router.get("/clubs/:clubId", async (req, res) => {
     status: club.status,
     description: club.description,
     createdAt: club.createdAt?.toISOString() ?? null,
+    subscriptionType: club.subscriptionType,
+    bookingFee: club.bookingFee != null ? String(club.bookingFee) : null,
     courses: club.courses.map((c) => ({
       id: c.id,
       name: c.name,
@@ -219,6 +221,9 @@ router.get("/clubs/:clubId", async (req, res) => {
       bookingWindowDays: cfg.bookingWindowDays,
       timezone: cfg.timezone,
       primaryColor: cfg.primaryColor,
+      cancellationHours: cfg.cancellationHours,
+      openTime: cfg.openTime,
+      closeTime: cfg.closeTime,
     })),
     staff: staffRows.map((r) => ({
       userId: r.userId,

@@ -13,7 +13,8 @@
     "seed:bookings": "tsx packages/db/src/seedBookings.ts",
     "seed:reset": "tsx packages/db/src/seedReset.ts && pnpm seed && pnpm seed:bookings",
     "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts",
-    "db:migrate": "drizzle-kit migrate --config packages/db/drizzle.config.ts"
+    "db:migrate": "drizzle-kit migrate --config packages/db/drizzle.config.ts",
+    "db:cleanup-pinebrook": "tsx packages/db/src/runCleanupPinebrook.ts"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

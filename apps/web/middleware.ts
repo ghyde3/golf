@@ -9,9 +9,7 @@ export default auth((req) => {
 
   if (pathname.startsWith("/platform")) {
     if (!req.auth?.user) {
-      const login = new URL("/login", req.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
+      return NextResponse.redirect(new URL("/login", req.url));
     }
     const ok = roles.some(
       (r) => r.role === "platform_admin" && r.clubId === null
@@ -23,9 +21,7 @@ export default auth((req) => {
 
   if (pathname.startsWith("/club/") || pathname === "/club") {
     if (!req.auth?.user) {
-      const login = new URL("/login", req.url);
-      login.searchParams.set("next", pathname);
-      return NextResponse.redirect(login);
+      return NextResponse.redirect(new URL("/login", req.url));
     }
     const parts = pathname.split("/").filter(Boolean);
     const clubId = parts[1];

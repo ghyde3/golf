@@ -1,6 +1,7 @@
 "use client";
 
 import { ClubSwitcher } from "@/components/ClubSwitcher";
+import { SignOutDialog } from "@/components/SignOutDialog";
 import {
   Tooltip,
   TooltipContent,
@@ -120,6 +121,7 @@ export function Sidebar({
   const iconOnly = isTablet;
 
   const [bookingsBadge, setBookingsBadge] = useState<number>(0);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -337,10 +339,7 @@ export function Sidebar({
                 </p>
                 <button
                   type="button"
-                  onClick={() => {
-                    const callback = encodeURIComponent("/login?signedOut=1");
-                    window.location.href = `/api/auth/signout?callbackUrl=${callback}`;
-                  }}
+                  onClick={() => setSignOutOpen(true)}
                   className="text-xs text-white/40 transition-colors hover:text-white/70"
                 >
                   Sign out
@@ -352,10 +351,7 @@ export function Sidebar({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={() => {
-                      const callback = encodeURIComponent("/login?signedOut=1");
-                      window.location.href = `/api/auth/signout?callbackUrl=${callback}`;
-                    }}
+                    onClick={() => setSignOutOpen(true)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
                     aria-label="Sign out"
                   >
@@ -367,6 +363,8 @@ export function Sidebar({
             )}
           </div>
         </div>
+
+        <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
       </aside>
   );
 }

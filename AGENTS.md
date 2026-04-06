@@ -14,10 +14,12 @@ This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("T
 ### Required services
 | Service | How to start | Notes |
 |---|---|---|
-| PostgreSQL | `sudo service postgresql start` | DB: `teetimes`, user: `ubuntu`, password: `devpass` |
-| Redis | `sudo service redis-server start` | Default port 6379 |
+| PostgreSQL | `pnpm docker:up` | Docker Compose (`docker-compose.yml`): Postgres 16 on `localhost:5432`, DB `teetimes`, user `ubuntu`, password `devpass` |
+| Redis | `pnpm docker:up` | Same compose file: Redis on `localhost:6379` |
 | Express API | `cd apps/api && pnpm dev` | Runs on port 3001 |
 | Next.js Web | `cd apps/web && pnpm dev` | Runs on port 3000 |
+
+*(If you use a host-installed Postgres instead of Docker, point `DATABASE_URL` at it; commands below assume the Docker URL from `.env.example`.)*
 
 ### Common commands
 - **Install deps**: `pnpm install` (from repo root)
@@ -27,7 +29,8 @@ This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("T
 - **Test**: `pnpm test` or per-app (`cd apps/api && pnpm test`)
 - **Typecheck**: `pnpm typecheck`
 - **DB migration generate**: `pnpm db:generate`
-- **DB migration run**: `DATABASE_URL=postgresql://ubuntu:devpass@localhost:5432/teetimes pnpm db:migrate`
+- **DB migration run**: `pnpm db:migrate` (with `DATABASE_URL` in `.env`; after `pnpm docker:up`)
+- **One-off Pinebrook duplicate courses cleanup** (SQL merge/delete): `pnpm db:cleanup-pinebrook`
 
 ### Seeding the database
 - **Base seed** (users + club + config): `pnpm seed`

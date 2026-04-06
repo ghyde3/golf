@@ -135,6 +135,9 @@ importers:
       '@teetimes/validators':
         specifier: workspace:*
         version: link:../../packages/validators
+      dotenv:
+        specifier: ^16.4.0
+        version: 16.6.1
       jose:
         specifier: ^6.2.2
         version: 6.2.2

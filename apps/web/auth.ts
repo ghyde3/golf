@@ -10,8 +10,19 @@ function apiBase(): string {
   );
 }
 
+function authSecret(): string | undefined {
+  return (
+    process.env.AUTH_SECRET ??
+    process.env.NEXTAUTH_SECRET ??
+    undefined
+  );
+}
+
+const secret = authSecret();
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
+  ...(secret ? { secret } : {}),
   providers: [
     Credentials({
       name: "credentials",
@@ -26,40 +37,44 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           return null;
         }
 
-        const res = await fetch(`${apiBase()}/api/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: String(email).trim(),
-            password: String(password),
-          }),
-        });
+        try {
+          const res = await fetch(`${apiBase()}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: String(email).trim(),
+              password: String(password),
+            }),
+          });
 
-        if (!res.ok) {
-          return null;
-        }
+          if (!res.ok) {
+            return null;
+          }
 
-        const data = (await res.json()) as {
-          token: string;
-          user: {
-            id: string;
-            email: string;
-            name: string | null;
-            roles: UserRole[];
+          const data = (await res.json()) as {
+            token: string;
+            user: {
+              id: string;
+              email: string;
+              name: string | null;
+              roles: UserRole[];
+            };
           };
-        };
 
-        if (!data?.token || !data?.user) {
+          if (!data?.token || !data?.user) {
+            return null;
+          }
+
+          return {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.name ?? undefined,
+            roles: data.user.roles,
+            accessToken: data.token,
+          };
+        } catch {
           return null;
         }
-
-        return {
-          id: data.user.id,
-          email: data.user.email,
-          name: data.user.name ?? undefined,
-          roles: data.user.roles,
-          accessToken: data.token,
-        };
       },
     }),
   ],

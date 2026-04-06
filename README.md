@@ -11,7 +11,9 @@ This README summarizes **current state** for local development. Detailed build/t
 
 ## Environment
 
-Copy `.env.example` to `.env` at the repo root and adjust if needed. The example assumes:
+Copy `.env.example` to `.env` at the repo root and adjust if needed. The Next.js app loads that root `.env` (via `apps/web/next.config.mjs`) so `NEXTAUTH_SECRET` and `API_URL` are available when you run `pnpm dev` from the monorepo root without a separate `apps/web/.env`. You can still add `apps/web/.env.local` for overrides.
+
+The example assumes:
 
 - **Postgres**: `postgresql://ubuntu:devpass@localhost:5432/teetimes` (database user password — not the same as app login passwords)
 - **API**: `PORT=3001`
@@ -35,6 +37,16 @@ pnpm dev
 
 - **Web**: http://localhost:3000  
 - **API**: http://localhost:3001 (e.g. `GET /health` → `{ "ok": true }`)
+
+## CI and automated checks
+
+On push and pull requests, **GitHub Actions** (`.github/workflows/ci.yml`) runs:
+
+- `pnpm typecheck` — TypeScript across packages  
+- `pnpm test` — Vitest (unit tests + **public API invariants**: routes like `GET /api/clubs/public/:slug` and `POST /api/bookings/public` must not return **401** from staff JWT middleware)  
+- `pnpm build` — production builds (requires `NEXTAUTH_SECRET` / `JWT_SECRET` in the workflow env; runners do not load your local `.env`)
+
+That catches **routing/wiring mistakes** and **broken builds** before merge. It does **not** spin up Postgres in CI yet, so DB-dependent handlers may log errors in tests while still asserting the right status codes. Optional next steps: add a **Postgres service** in CI and a small **migration + seed** step for deeper API tests, plus **Playwright** (or similar) for login and public booking flows.
 
 ## Demo credentials (seeded users)
 

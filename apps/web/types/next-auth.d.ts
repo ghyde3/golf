@@ -2,6 +2,11 @@ import type { UserRole } from "@teetimes/types";
 import type { DefaultSession } from "next-auth";
 
 declare module "next-auth" {
+  interface User {
+    roles?: UserRole[];
+    accessToken?: string;
+  }
+
   interface Session {
     accessToken?: string;
     user: DefaultSession["user"] & {

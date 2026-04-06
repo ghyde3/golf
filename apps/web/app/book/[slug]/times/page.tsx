@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -35,15 +36,14 @@ function formatTime(datetime: string, timezone: string): string {
   });
 }
 
-function getDateChips(): { label: string; value: string; dayLabel: string }[] {
+function getDateChips(): { value: string; dayLabel: string; dayNum: number }[] {
   const chips = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date();
     d.setDate(d.getDate() + i);
     const value = d.toISOString().split("T")[0];
     const dayLabel = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-US", { weekday: "short" });
-    const label = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    chips.push({ label, value, dayLabel });
+    chips.push({ value, dayLabel, dayNum: d.getDate() });
   }
   return chips;
 }
@@ -51,14 +51,11 @@ function getDateChips(): { label: string; value: string; dayLabel: string }[] {
 function TimesPageInner({ params }: { params: { slug: string } }) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const clubIdParam = searchParams.get("clubId");
   const slotFullBanner = searchParams.get("error") === "slot_full";
 
   const [club, setClub] = useState<ClubProfile | null>(null);
   const [players, setPlayers] = useState(2);
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [selectedCourse, setSelectedCourse] = useState<string>("");
   const [allSlots, setAllSlots] = useState<Slot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,9 +95,7 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
     }
   }, [club?.id, selectedCourse, selectedDate, fetchSlots]);
 
-  const filteredSlots = allSlots.filter(
-    (s) => s.maxPlayers - s.bookedPlayers >= players
-  );
+  const filteredSlots = allSlots.filter((s) => s.maxPlayers - s.bookedPlayers >= players);
 
   const timezone = club?.config?.timezone || "America/New_York";
 
@@ -110,7 +105,7 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
       hour12: false,
       timeZone: timezone,
     });
-    return parseInt(h) < 12;
+    return parseInt(h, 10) < 12;
   });
 
   const afternoonSlots = allSlots.filter((s) => {
@@ -119,7 +114,7 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
       hour12: false,
       timeZone: timezone,
     });
-    return parseInt(h) >= 12;
+    return parseInt(h, 10) >= 12;
   });
 
   const soonestSlots = filteredSlots.slice(0, 5);
@@ -145,86 +140,98 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-md mx-auto px-4 py-3 flex items-center gap-3">
-          <a
-            href={`/book/${params.slug}`}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            ← Back
-          </a>
-          <h1 className="font-semibold text-gray-800 truncate">
+    <div className="flex min-h-screen flex-col bg-ds-warm-white lg:mx-auto lg:max-w-3xl lg:shadow-card">
+      <header className="sticky top-0 z-20 shrink-0 border-b border-ds-stone bg-ds-warm-white">
+        <div className="flex h-[52px] items-center gap-3 px-4">
+          <Link href={`/book/${params.slug}`} className="flex items-center gap-1 text-[13px] font-medium text-ds-fairway">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+              <path d="M19 12H5M12 5l-7 7 7 7" />
+            </svg>
+            Back
+          </Link>
+          <h1 className="min-w-0 flex-1 truncate font-display text-base text-ds-ink">
             {club?.name ?? "Loading..."}
           </h1>
         </div>
-      </div>
-
-      <div className="max-w-md mx-auto px-4 py-4 space-y-4">
-        {slotFullBanner && (
-          <div
-            role="alert"
-            className="rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm px-3 py-2"
-          >
-            That slot just filled — please choose another time.
-          </div>
-        )}
-        {/* Players selector */}
-        <div className="flex items-center justify-between bg-white rounded-lg p-3 shadow-sm">
-          <span className="text-sm font-medium text-gray-700">Players</span>
+        <div className="flex items-center border-t border-ds-stone px-4 py-2.5">
+          <span className="flex-1 text-xs font-semibold uppercase tracking-wider text-ds-muted">Players</span>
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={() => setPlayers(Math.max(1, players - 1))}
-              className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200"
+              className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-ds-stone bg-white text-base font-light text-ds-ink"
+              aria-label="Decrease players"
             >
               −
             </button>
-            <span className="text-lg font-semibold w-6 text-center">
-              {players}
-            </span>
+            <span className="min-w-[1.25rem] text-center font-display text-lg text-ds-ink">{players}</span>
             <button
+              type="button"
               onClick={() => setPlayers(Math.min(4, players + 1))}
-              className="w-8 h-8 rounded-full bg-green-100 text-green-700 flex items-center justify-center hover:bg-green-200"
+              className="flex h-7 w-7 items-center justify-center rounded-full border-[1.5px] border-ds-stone bg-white text-base font-light text-ds-ink"
+              aria-label="Increase players"
             >
               +
             </button>
           </div>
         </div>
+      </header>
 
-        {/* Date bar */}
-        <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex min-h-0 flex-1 flex-col">
+        {slotFullBanner && (
+          <div
+            role="alert"
+            className="mx-4 mt-3 rounded-lg border border-amber-200/80 bg-amber-50 px-3 py-2 text-sm text-amber-950"
+          >
+            That slot just filled — please choose another time.
+          </div>
+        )}
+
+        <div className="flex gap-1.5 overflow-x-auto border-b border-ds-stone bg-ds-warm-white px-4 py-2.5 scrollbar-none">
           {dateChips.map((chip) => (
             <button
               key={chip.value}
+              type="button"
               onClick={() => setSelectedDate(chip.value)}
-              className={`flex-shrink-0 px-3 py-2 rounded-lg text-center min-w-[4.5rem] ${
+              className={`flex min-w-[52px] shrink-0 flex-col items-center rounded-xl border-[1.5px] px-3 py-2 transition-colors ${
                 selectedDate === chip.value
-                  ? "bg-green-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-gray-100"
+                  ? "border-ds-forest bg-ds-forest"
+                  : "border-ds-stone bg-white"
               }`}
             >
-              <div className="text-xs font-medium">{chip.dayLabel}</div>
-              <div className="text-sm">{chip.label}</div>
+              <span
+                className={`text-[9px] font-semibold uppercase tracking-wider ${
+                  selectedDate === chip.value ? "text-white/60" : "text-ds-muted"
+                }`}
+              >
+                {chip.dayLabel}
+              </span>
+              <span
+                className={`font-display text-[17px] leading-tight ${
+                  selectedDate === chip.value ? "text-white" : "text-ds-ink"
+                }`}
+              >
+                {chip.dayNum}
+              </span>
             </button>
           ))}
         </div>
 
-        {/* Course selector */}
         {club?.courses && club.courses.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto border-b border-ds-stone px-4 py-2.5 scrollbar-none">
             {club.courses.map((course) => (
               <button
                 key={course.id}
+                type="button"
                 onClick={() => setSelectedCourse(course.id)}
-                className={`flex-shrink-0 px-3 py-2 rounded-lg text-sm ${
+                className={`shrink-0 rounded-full border-[1.5px] px-3.5 py-1.5 text-xs font-medium ${
                   selectedCourse === course.id
-                    ? "bg-green-600 text-white"
-                    : "bg-white text-gray-700 hover:bg-gray-100"
+                    ? "border-ds-fairway bg-ds-fairway text-white"
+                    : "border-ds-stone bg-white text-ds-muted"
                 }`}
               >
                 {course.name}
-                <span className="ml-1 text-xs opacity-70">
+                <span className={`ml-1 text-[11px] ${selectedCourse === course.id ? "text-white/80" : "opacity-70"}`}>
                   ({course.holes}h)
                 </span>
               </button>
@@ -232,100 +239,104 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
           </div>
         )}
 
-        {loading ? (
-          <div className="text-center py-12 text-gray-500">
-            Loading tee times...
-          </div>
-        ) : (
-          <>
-            {/* Soonest available pills */}
-            {soonestSlots.length > 0 && (
-              <div>
-                <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                  Soonest Available
-                </h2>
-                <div className="flex gap-2 overflow-x-auto">
-                  {soonestSlots.map((slot) => (
-                    <button
-                      key={slot.datetime}
-                      onClick={() => selectSlot(slot)}
-                      className="flex-shrink-0 px-4 py-2 bg-green-600 text-white rounded-full text-sm font-medium hover:bg-green-700"
-                    >
-                      {formatTime(slot.datetime, timezone)}
-                    </button>
-                  ))}
+        <div className="flex-1 overflow-y-auto pb-8">
+          {loading ? (
+            <div className="py-16 text-center text-sm text-ds-muted">Loading tee times...</div>
+          ) : (
+            <>
+              {soonestSlots.length > 0 && (
+                <div className="border-b border-ds-stone bg-ds-cream px-4 py-3.5">
+                  <div className="mb-2.5 flex flex-wrap items-baseline gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ds-gold">
+                      Soonest available
+                    </span>
+                    <span className="text-[11px] text-ds-muted">for {players} players</span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto scrollbar-none">
+                    {soonestSlots.map((slot) => (
+                      <button
+                        key={slot.datetime}
+                        type="button"
+                        onClick={() => selectSlot(slot)}
+                        className="flex shrink-0 flex-col items-center gap-0.5 rounded-full bg-ds-fairway px-4 py-2 text-[13px] font-medium text-white"
+                      >
+                        <span>{formatTime(slot.datetime, timezone)}</span>
+                        {slot.price != null && (
+                          <span className="text-[10px] font-normal opacity-70">${slot.price}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {allSlots.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500 text-lg">No tee times available</p>
-                <p className="text-gray-400 text-sm mt-1">
-                  Try a different date or course
-                </p>
-              </div>
-            ) : (
-              <>
-                {/* Morning slots */}
-                {morningSlots.length > 0 && (
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                      Morning
-                    </h2>
-                    <div className="space-y-1">
-                      {morningSlots.map((slot) => (
-                        <SlotRow
-                          key={slot.datetime}
-                          slot={slot}
-                          available={isAvailable(slot)}
-                          timezone={timezone}
-                          onSelect={() => selectSlot(slot)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+              {allSlots.length === 0 ? (
+                <div className="py-16 text-center">
+                  <p className="text-lg text-ds-muted">No tee times available</p>
+                  <p className="mt-1 text-sm text-ds-muted/80">Try a different date or course</p>
+                </div>
+              ) : (
+                <>
+                  {morningSlots.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 bg-ds-warm-white px-4 pb-1.5 pt-3">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-ds-gold">
+                          Morning
+                        </span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-ds-stone to-transparent" />
+                      </div>
+                      <ul>
+                        {morningSlots.map((slot) => (
+                          <SlotRow
+                            key={slot.datetime}
+                            slot={slot}
+                            available={isAvailable(slot)}
+                            timezone={timezone}
+                            onSelect={() => selectSlot(slot)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  )}
 
-                {/* Afternoon slots */}
-                {afternoonSlots.length > 0 && (
-                  <div>
-                    <h2 className="text-sm font-semibold text-gray-600 mb-2">
-                      Afternoon
-                    </h2>
-                    <div className="space-y-1">
-                      {afternoonSlots.map((slot) => (
-                        <SlotRow
-                          key={slot.datetime}
-                          slot={slot}
-                          available={isAvailable(slot)}
-                          timezone={timezone}
-                          onSelect={() => selectSlot(slot)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
+                  {afternoonSlots.length > 0 && (
+                    <section>
+                      <div className="flex items-center gap-2 bg-ds-warm-white px-4 pb-1.5 pt-3">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-ds-gold">
+                          Afternoon
+                        </span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-ds-stone to-transparent" />
+                      </div>
+                      <ul>
+                        {afternoonSlots.map((slot) => (
+                          <SlotRow
+                            key={slot.datetime}
+                            slot={slot}
+                            available={isAvailable(slot)}
+                            timezone={timezone}
+                            onSelect={() => selectSlot(slot)}
+                          />
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </>
+              )}
+            </>
+          )}
+        </div>
       </div>
-    </main>
+    </div>
   );
 }
 
-export default function TimesPage({
-  params,
-}: {
-  params: { slug: string };
-}) {
+export default function TimesPage({ params }: { params: { slug: string } }) {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500">
+        <div className="flex min-h-screen items-center justify-center bg-ds-warm-white text-ds-muted">
           Loading…
-        </main>
+        </div>
       }
     >
       <TimesPageInner params={params} />
@@ -346,38 +357,40 @@ function SlotRow({
 }) {
   const spots = slot.maxPlayers - slot.bookedPlayers;
   return (
-    <button
-      onClick={available ? onSelect : undefined}
-      disabled={!available}
-      className={`w-full flex items-center justify-between p-3 rounded-lg transition-colors ${
-        available
-          ? "bg-white hover:bg-green-50 cursor-pointer"
-          : "bg-gray-100 opacity-50 cursor-not-allowed"
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <span className={`font-medium ${available ? "text-gray-800" : "text-gray-400"}`}>
+    <li>
+      <button
+        type="button"
+        onClick={available ? onSelect : undefined}
+        disabled={!available}
+        className={`flex w-full items-center gap-3 border-b border-ds-stone px-4 py-3 text-left transition-colors ${
+          available ? "cursor-pointer bg-ds-warm-white hover:bg-ds-cream" : "cursor-not-allowed opacity-40"
+        }`}
+      >
+        <span
+          className={`min-w-[72px] font-display text-[15px] ${available ? "text-ds-ink" : "text-ds-muted"}`}
+        >
           {formatTime(slot.datetime, timezone)}
         </span>
-        <div className="flex gap-0.5">
+        <div className="flex flex-1 flex-wrap items-center gap-1">
           {Array.from({ length: slot.maxPlayers }).map((_, i) => (
-            <div
+            <span
               key={i}
-              className={`w-2 h-2 rounded-full ${
-                i < slot.bookedPlayers ? "bg-gray-300" : "bg-green-500"
-              }`}
+              className={`h-[9px] w-[9px] rounded-full ${i < slot.bookedPlayers ? "bg-ds-stone" : "bg-ds-grass"}`}
             />
           ))}
+          <span className={`ml-1 text-[11px] ${available ? "text-ds-muted" : "text-ds-muted"}`}>
+            {available ? `${spots} spot${spots !== 1 ? "s" : ""}` : "Full"}
+          </span>
         </div>
-      </div>
-      <div className="text-right">
-        <span className={`text-sm ${available ? "text-gray-600" : "text-gray-400"}`}>
-          {available ? `${spots} spot${spots !== 1 ? "s" : ""}` : "Full"}
-        </span>
-        {slot.price && (
-          <span className="text-sm text-gray-500 ml-2">${slot.price}</span>
+        {slot.price != null && (
+          <span className={`text-[13px] font-semibold ${available ? "text-ds-fairway" : "text-ds-muted"}`}>
+            ${slot.price}
+          </span>
         )}
-      </div>
-    </button>
+        <span className="text-ds-stone" aria-hidden>
+          ›
+        </span>
+      </button>
+    </li>
   );
 }

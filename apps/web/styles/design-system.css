@@ -1,0 +1,64 @@
+/**
+ * TeeTimes public golfer UI — design tokens
+ * References: designs/teetimes-redesign.html (mobile), designs/teetimes-desktop.html (desktop)
+ * Fonts are loaded via next/font in app/layout.tsx; --font-dm-sans / --font-playfair are set there.
+ */
+
+:root {
+  /* Core palette */
+  --forest: #1a3a2a;
+  --fairway: #2d5a3d;
+  --grass: #4a8c5c;
+  --light-grass: #7ab88a;
+  --morning: #f5f0e8;
+  --cream: #faf7f2;
+  --stone: #e8e0d0;
+  --warm-white: #fefcf8;
+  --ink: #1c2118;
+  --muted: #6b7a6e;
+  --gold: #c9a84c;
+  --gold-light: #f0d98a;
+
+  /* Surfaces & chrome */
+  --body-bg: #f0ebe0;
+  --desktop-chrome-bg: #2a2a28;
+  --label-tint: #8a7a65;
+  --section-label-desktop: #7a7060;
+
+  /* Tags (featured cards) */
+  --tag-green-bg: #e8f5ec;
+  --tag-gold-bg: #f5edd8;
+  --tag-gold-fg: #7a5c1a;
+
+  /* Layout */
+  --nav-h-mobile: 60px;
+  --nav-h-desktop: 64px;
+  --sidebar-w: 420px;
+
+  /* Radii */
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-pill: 9999px;
+
+  /* Shadows */
+  --shadow-search: 0 2px 12px rgba(0, 0, 0, 0.06);
+  --shadow-card: 0 2px 16px rgba(0, 0, 0, 0.08);
+  --shadow-phone: 0 24px 80px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.1);
+
+  /* Typography fallbacks (overridden by next/font CSS variables on <html>) */
+  --font-sans: var(--font-dm-sans), "DM Sans", system-ui, sans-serif;
+  --font-display: var(--font-playfair), "Playfair Display", Georgia, serif;
+}
+
+/* Typography defaults — page shells set background (landing / book use --body-bg) */
+body {
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Utility: display / heading font */
+.font-display {
+  font-family: var(--font-display);
+}

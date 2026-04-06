@@ -1,7 +1,8 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -13,7 +14,7 @@ interface ClubProfile {
   };
 }
 
-export default function SuccessPage({ params }: { params: { slug: string } }) {
+function SuccessContent({ params }: { params: { slug: string } }) {
   const searchParams = useSearchParams();
   const [club, setClub] = useState<ClubProfile | null>(null);
 
@@ -51,89 +52,89 @@ export default function SuccessPage({ params }: { params: { slug: string } }) {
     : "";
 
   return (
-    <main className="min-h-screen bg-green-50 flex flex-col items-center justify-center px-4">
-      <div className="max-w-md w-full text-center space-y-6">
-        {/* Checkmark */}
-        <div className="w-20 h-20 bg-green-600 rounded-full flex items-center justify-center mx-auto">
-          <svg
-            className="w-10 h-10 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={3}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
-        </div>
+    <div className="flex min-h-screen flex-col items-center bg-ds-warm-white px-6 pb-10 pt-12">
+      <div
+        className="relative mb-5 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-ds-fairway text-white after:absolute after:-inset-1.5 after:rounded-full after:border-[1.5px] after:border-ds-fairway/20"
+        aria-hidden
+      >
+        <svg className="relative z-[1] h-9 w-9" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      </div>
 
-        <div>
-          <h1 className="text-3xl font-bold text-gray-800">You&apos;re Booked!</h1>
-          <p className="text-gray-500 mt-2">
-            Confirmation sent to{" "}
-            <span className="font-medium text-gray-700">{guestEmail}</span>.
-            <br />
-            We&apos;ll remind you 24 hours before.
+      <h1 className="font-display text-[26px] text-ds-ink">You&apos;re booked!</h1>
+      <p className="mt-2 max-w-[260px] text-center text-[13px] leading-relaxed text-ds-muted">
+        Confirmation sent to <span className="font-medium text-ds-ink">{guestEmail}</span>. We&apos;ll remind you 24
+        hours before.
+      </p>
+
+      <div className="mt-7 w-full max-w-md overflow-hidden rounded-2xl border-[1.5px] border-ds-stone bg-white shadow-card">
+        <div className="relative overflow-hidden bg-ds-forest px-[18px] py-4 text-white">
+          <div
+            className="pointer-events-none absolute -bottom-8 -right-5 h-[120px] w-[120px] rounded-full border border-ds-grass/30"
+            aria-hidden
+          />
+          <p className="relative font-display text-base">{club?.name ?? params.slug}</p>
+          <p className="relative mt-1 text-xs text-white/60">
+            {formattedDate} · {formattedTime}
           </p>
         </div>
 
-        {/* Booking card */}
-        <div className="bg-white rounded-xl shadow-lg p-6 text-left space-y-3">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-sm text-gray-500">Club</p>
-              <p className="font-semibold text-gray-800">
-                {club?.name ?? params.slug}
-              </p>
-            </div>
-            <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-semibold">
-              Confirmed
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-sm text-gray-500">Date</p>
-              <p className="font-medium text-gray-800">{formattedDate}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Time</p>
-              <p className="font-medium text-gray-800">{formattedTime}</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="text-sm text-gray-500">Players</p>
-              <p className="font-medium text-gray-800">{players}</p>
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Name</p>
-              <p className="font-medium text-gray-800">{guestName}</p>
-            </div>
-          </div>
-
-          <div className="border-t pt-3 mt-3">
-            <p className="text-sm text-gray-500">Booking Reference</p>
-            <p className="text-xl font-mono font-bold text-green-700 tracking-wider">
-              {bookingRef}
-            </p>
-          </div>
+        <div className="flex items-center bg-ds-cream">
+          <div className="-ml-2.5 h-5 w-5 shrink-0 rounded-full border-[1.5px] border-ds-stone bg-ds-warm-white" aria-hidden />
+          <div className="mx-1 h-0 flex-1 border-t-[1.5px] border-dashed border-ds-stone" />
+          <div className="-mr-2.5 h-5 w-5 shrink-0 rounded-full border-[1.5px] border-ds-stone bg-ds-warm-white" aria-hidden />
         </div>
 
-        {/* Actions */}
-        <div className="space-y-3">
-          <a
-            href={`/book/${params.slug}`}
-            className="block w-full bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
-          >
-            Book Another Tee Time
-          </a>
+        <div className="space-y-3 px-[18px] py-3.5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Date</p>
+              <p className="text-sm font-semibold text-ds-ink">{formattedDate}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Time</p>
+              <p className="text-sm font-semibold text-ds-ink">{formattedTime}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Players</p>
+              <p className="text-sm font-semibold text-ds-ink">{players}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Name</p>
+              <p className="text-sm font-semibold text-ds-ink">{guestName}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-ds-stone pt-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Booking reference</p>
+            <p className="font-mono text-xl font-bold tracking-wider text-ds-fairway">{bookingRef}</p>
+          </div>
         </div>
       </div>
-    </main>
+
+      <Link
+        href={`/book/${params.slug}`}
+        className="relative mt-6 w-full max-w-md overflow-hidden rounded-[14px] bg-ds-fairway py-3.5 text-center text-[15px] font-semibold text-white after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none"
+      >
+        <span className="relative z-[1]">Book another tee time</span>
+      </Link>
+    </div>
+  );
+}
+
+export default function SuccessPage({ params }: { params: { slug: string } }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-ds-warm-white text-ds-muted">
+          Loading…
+        </div>
+      }
+    >
+      <SuccessContent params={params} />
+    </Suspense>
   );
 }

@@ -46,3 +46,21 @@ export async function clubManageApi(
     },
   });
 }
+
+/** Club-scoped routes mounted at `/api/clubs/:clubId` (courses, config, teesheet, etc.) */
+export async function clubApi(
+  clubId: string,
+  path: string,
+  init?: RequestInit
+) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return fetch(`${apiBase()}/api/clubs/${clubId}${p}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeader()),
+      ...init?.headers,
+    },
+  });
+}

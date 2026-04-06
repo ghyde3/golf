@@ -8,6 +8,18 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        forest: "#1a3a2a",
+        fairway: "#2d5a3d",
+        grass: "#4a8c5c",
+        "light-grass": "#7ab88a",
+        gold: "#c9a84c",
+        "gold-light": "#f0d98a",
+        cream: "#faf7f2",
+        stone: "#e8e0d0",
+        "warm-white": "#fefcf8",
+        ink: "#1c2118",
+        muted: "#6b7a6e",
+        "sidebar-bg": "#1c1f1d",
         ds: {
           forest: "var(--forest)",
           fairway: "var(--fairway)",
@@ -28,13 +40,14 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-dm-sans)", "DM Sans", "system-ui", "sans-serif"],
+        sans: ['"DM Sans"', "var(--font-dm-sans)", "system-ui", "sans-serif"],
         display: [
+          '"Playfair Display"',
           "var(--font-playfair)",
-          "Playfair Display",
           "Georgia",
           "serif",
         ],
+        mono: ['"DM Mono"', "var(--font-dm-mono)", "ui-monospace", "monospace"],
       },
       boxShadow: {
         search: "var(--shadow-search)",

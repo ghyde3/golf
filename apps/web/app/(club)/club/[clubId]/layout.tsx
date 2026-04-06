@@ -1,8 +1,7 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
-import { LogoutButton } from "../../../../components/LogoutButton";
-import { ClubSwitcher } from "../../../../components/ClubSwitcher";
+import { auth } from "@/auth";
+import { ClubShell } from "@/components/club/ClubShell";
 import { apiBaseUrl, getSessionToken } from "../../../../lib/server-session";
+import { redirect } from "next/navigation";
 
 type Context = {
   isPlatformAdmin: boolean;
@@ -57,44 +56,29 @@ export default async function ClubShellLayout({
     }
   }
 
+  const session = await auth();
+  const displayName =
+    session?.user?.name?.trim() ||
+    session?.user?.email?.split("@")[0] ||
+    "User";
+  const initials = displayName
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <div className="min-h-screen bg-stone-950 text-stone-100">
-      <header className="border-b border-stone-800 bg-stone-900/80 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6 min-w-0">
-            <span className="font-semibold text-white truncate">
-              {current?.name ?? "Club"}
-            </span>
-            <nav className="flex flex-wrap gap-3 text-sm">
-              <Link
-                href={`/club/${params.clubId}/dashboard`}
-                className="text-stone-400 hover:text-white transition-colors"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href={`/book/${current?.slug ?? "pinebrook"}`}
-                className="text-stone-400 hover:text-white transition-colors"
-              >
-                Public booking page
-              </Link>
-            </nav>
-          </div>
-          <div className="flex items-center gap-4 flex-shrink-0">
-            <ClubSwitcher clubId={params.clubId} clubs={ctx.clubs} />
-            {ctx.isPlatformAdmin && (
-              <Link
-                href="/platform"
-                className="text-xs text-emerald-400 hover:text-emerald-300"
-              >
-                Platform
-              </Link>
-            )}
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
-      <div className="max-w-5xl mx-auto px-4 py-8">{children}</div>
-    </div>
+    <ClubShell
+      clubId={params.clubId}
+      clubSlug={current?.slug ?? "club"}
+      clubs={ctx.clubs}
+      userName={displayName}
+      userInitials={initials}
+      roles={session?.user?.roles ?? []}
+      isPlatformAdmin={ctx.isPlatformAdmin}
+    >
+      {children}
+    </ClubShell>
   );
 }

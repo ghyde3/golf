@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import Link from "next/link";
+import { useState } from "react";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -40,72 +43,69 @@ export function SetPasswordForm({ initialToken }: { initialToken: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4">
+    <AuthShell>
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-white text-center mb-1">
+        <h1 className="text-center font-display text-2xl text-ink">
           Set password
         </h1>
-        <p className="text-slate-400 text-sm text-center mb-8">
+        <p className="mt-1 text-center text-sm text-muted">
           Complete your staff account setup
         </p>
 
         <form
           onSubmit={(e) => void onSubmit(e)}
-          className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4"
+          className="mt-8 space-y-4 rounded-xl border border-stone bg-white p-6 shadow-sm"
         >
           <div>
             <label
               htmlFor="token"
-              className="block text-xs text-slate-400 mb-1"
+              className="mb-1 block text-xs font-bold uppercase tracking-widest text-muted"
             >
               Invite token
             </label>
-            <input
+            <Input
               id="token"
               value={token}
               onChange={(e) => setToken(e.target.value)}
               required
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 text-white px-3 py-2 text-sm"
             />
           </div>
           <div>
             <label
               htmlFor="password"
-              className="block text-xs text-slate-400 mb-1"
+              className="mb-1 block text-xs font-bold uppercase tracking-widest text-muted"
             >
               New password (min 8 characters)
             </label>
-            <input
+            <Input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={8}
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 text-white px-3 py-2 text-sm"
             />
           </div>
           {error && (
-            <p className="text-red-400 text-sm text-center">{error}</p>
+            <p className="text-center text-sm text-red-700">{error}</p>
           )}
           {message && (
-            <p className="text-emerald-400 text-sm text-center">{message}</p>
+            <p className="text-center text-sm text-fairway">{message}</p>
           )}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg text-sm disabled:opacity-50"
-          >
+          <Button type="submit" className="w-full" disabled={pending}>
             {pending ? "Saving…" : "Save password"}
-          </button>
+          </Button>
         </form>
 
-        <p className="text-slate-500 text-xs text-center mt-8">
-          <Link href="/login" className="underline hover:text-slate-400">
+        <p className="mt-8 text-center text-xs text-muted">
+          <Link
+            href="/login"
+            className="font-medium text-fairway underline-offset-4 hover:underline"
+          >
             Back to sign in
           </Link>
         </p>
       </div>
-    </main>
+    </AuthShell>
   );
 }

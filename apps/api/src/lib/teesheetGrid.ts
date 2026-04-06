@@ -1,6 +1,6 @@
 import { db } from "@teetimes/db";
-import { clubConfig, teeSlots } from "@teetimes/db";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { bookings, clubConfig, teeSlots } from "@teetimes/db";
+import { eq, desc, and, gte, lte, inArray, isNull } from "drizzle-orm";
 import { resolveConfig, resolveHours } from "./configResolver";
 import { generateSlots } from "./slotGenerator";
 import type { CachedAvailabilitySlot } from "./availabilityCache";
@@ -98,5 +98,34 @@ export async function buildTeesheetGrid(
   merged.sort(
     (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
   );
+
+  const slotIds = merged
+    .map((m) => m.id)
+    .filter((id): id is string => id != null);
+
+  if (slotIds.length > 0) {
+    const bookingRows = await db.query.bookings.findMany({
+      where: and(
+        inArray(bookings.teeSlotId, slotIds),
+        isNull(bookings.deletedAt)
+      ),
+    });
+
+    const bySlot = new Map<string, (typeof bookingRows)[0]>();
+    for (const b of bookingRows) {
+      if (b.teeSlotId && !bySlot.has(b.teeSlotId)) {
+        bySlot.set(b.teeSlotId, b);
+      }
+    }
+
+    for (const m of merged) {
+      if (m.id && bySlot.has(m.id)) {
+        const b = bySlot.get(m.id)!;
+        m.bookingId = b.id;
+        m.bookingRef = b.bookingRef;
+      }
+    }
+  }
+
   return merged;
 }

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { DM_Sans, Playfair_Display } from "next/font/google";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { DM_Mono, DM_Sans, Playfair_Display } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -12,6 +14,12 @@ const playfair = Playfair_Display({
   subsets: ["latin"],
   variable: "--font-playfair",
   weight: ["400", "700"],
+});
+
+const dmMono = DM_Mono({
+  subsets: ["latin"],
+  variable: "--font-dm-mono",
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -27,9 +35,14 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${dmSans.variable} ${playfair.variable}`}
+      className={`${dmSans.variable} ${playfair.variable} ${dmMono.variable}`}
     >
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <TooltipProvider delayDuration={300}>
+          {children}
+          <Toaster richColors position="top-center" />
+        </TooltipProvider>
+      </body>
     </html>
   );
 }

@@ -1,0 +1,1537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TeeTimes — Club UI Design Reference</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── DESIGN REFERENCE — DO NOT DEPLOY
+   Club staff + admin UI
+   Primary: desktop 1280-1440px, secondary: tablet 1024px (iPad landscape)
+   Fonts: Playfair Display (headings/display), DM Sans (UI), DM Mono (refs/times)
+   Layout: fixed sidebar nav + main content area
+   Theme: dark stone sidebar, warm white content, forest green accents
+── */
+
+:root {
+  --sidebar-w: 220px;
+  --sidebar-bg: #1c1f1d;
+  --sidebar-border: rgba(255,255,255,0.07);
+  --forest: #1a3a2a;
+  --fairway: #2d5a3d;
+  --grass: #4a8c5c;
+  --light-grass: #7ab88a;
+  --cream: #faf7f2;
+  --stone: #e8e0d0;
+  --warm-white: #fefcf8;
+  --ink: #1c2118;
+  --muted: #6b7a6e;
+  --gold: #c9a84c;
+  --gold-light: #f0d98a;
+  --danger: #c0392b;
+  --danger-light: #fdf0ef;
+  --warning: #b8770a;
+  --warning-light: #fef9ed;
+  --success: #2d7a4a;
+  --success-light: #edf8f1;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #111210;
+  color: var(--ink);
+}
+
+/* ── SECTION LABELS ── */
+.page-wrap { margin-bottom: 48px; }
+.screen-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: #5a5248; padding: 28px 32px 12px;
+  display: block;
+}
+
+/* ── SHELL ── */
+.app-shell {
+  display: flex;
+  height: 860px;
+  background: var(--warm-white);
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15), 0 32px 80px rgba(0,0,0,0.4);
+  margin: 0 32px;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1px solid var(--sidebar-border);
+}
+.sidebar-logo {
+  padding: 20px 20px 18px;
+  border-bottom: 1px solid var(--sidebar-border);
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-mark-s {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  background: var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700;
+  color: var(--forest); flex-shrink: 0;
+}
+.logo-text-s {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px; color: #fff;
+}
+
+/* Club switcher */
+.club-switcher {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--sidebar-border);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 10px;
+}
+.cs-avatar {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--fairway);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.cs-info { flex: 1; min-width: 0; }
+.cs-name {
+  font-size: 13px; font-weight: 600; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cs-role { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+.cs-chevron { color: rgba(255,255,255,0.3); font-size: 12px; }
+
+/* Nav */
+.nav-section { padding: 16px 12px 8px; flex: 1; overflow-y: auto; }
+.nav-section-label {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255,255,255,0.25);
+  padding: 0 8px 8px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: background 0.12s;
+}
+.nav-item:hover { background: rgba(255,255,255,0.06); }
+.nav-item.active { background: var(--fairway); }
+.nav-icon-s {
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.nav-icon-s svg { width: 16px; height: 16px; }
+.nav-label-s {
+  font-size: 13px; font-weight: 500;
+  color: rgba(255,255,255,0.55);
+}
+.nav-item.active .nav-label-s { color: #fff; }
+.nav-item:hover:not(.active) .nav-label-s { color: rgba(255,255,255,0.8); }
+.nav-badge {
+  margin-left: auto;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px; text-align: center;
+}
+.nav-divider { height: 1px; background: var(--sidebar-border); margin: 10px 10px; }
+
+/* Sidebar bottom */
+.sidebar-bottom {
+  padding: 12px;
+  border-top: 1px solid var(--sidebar-border);
+}
+.user-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+}
+.user-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.7);
+  flex-shrink: 0;
+}
+.user-name { font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.6); flex: 1; }
+
+/* ── MAIN CONTENT ── */
+.main-content {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* Top bar */
+.top-bar {
+  height: 56px; flex-shrink: 0;
+  display: flex; align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--stone);
+  background: var(--warm-white);
+  gap: 16px;
+}
+.top-bar-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; color: var(--ink); flex: 1;
+}
+.top-bar-date {
+  font-size: 13px; color: var(--muted);
+  background: var(--cream);
+  padding: 6px 12px; border-radius: 8px;
+  border: 1px solid var(--stone);
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+}
+.tbd-prev, .tbd-next {
+  font-size: 16px; cursor: pointer; color: var(--muted);
+  padding: 0 2px;
+}
+.tbd-today {
+  font-size: 12px; font-weight: 600;
+  color: var(--fairway); cursor: pointer;
+  padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--stone);
+}
+.top-bar-actions { display: flex; gap: 8px; }
+.tb-btn {
+  padding: 7px 14px;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; border: none;
+  display: flex; align-items: center; gap: 6px;
+}
+.tb-btn-ghost {
+  background: var(--cream);
+  color: var(--ink);
+  border: 1px solid var(--stone);
+}
+.tb-btn-primary {
+  background: var(--fairway);
+  color: #fff;
+}
+
+/* ══ VIEW 1: DASHBOARD + TEESHEET ══ */
+.dashboard-content {
+  flex: 1; overflow-y: auto;
+  padding: 24px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* Stat cards row */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.stat-card {
+  background: #fff;
+  border: 1px solid var(--stone);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex; flex-direction: column; gap: 6px;
+  position: relative; overflow: hidden;
+}
+.stat-card::after {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0;
+  height: 2px;
+}
+.stat-card.green::after { background: var(--grass); }
+.stat-card.gold::after { background: var(--gold); }
+.stat-card.blue::after { background: #4a7ab8; }
+.stat-card.red::after { background: var(--danger); }
+.sc-label {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+.sc-value {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; color: var(--ink); line-height: 1;
+}
+.sc-sub { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.sc-delta { font-weight: 600; }
+.sc-delta.up { color: var(--success); }
+.sc-delta.down { color: var(--danger); }
+
+/* Two-column layout below stats */
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Tee sheet preview */
+.teesheet-card {
+  background: #fff;
+  border: 1px solid var(--stone);
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.tc-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; gap: 12px;
+}
+.tc-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px; color: var(--ink); flex: 1;
+}
+.course-pills { display: flex; gap: 6px; }
+.cp {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; transition: all 0.12s;
+  border: 1px solid var(--stone);
+  background: #fff; color: var(--muted);
+}
+.cp.active { background: var(--fairway); border-color: var(--fairway); color: #fff; }
+.cp.full { background: var(--cream); color: var(--muted); opacity: 0.6; }
+.tc-view-all {
+  font-size: 12px; font-weight: 600;
+  color: var(--fairway); cursor: pointer;
+}
+
+/* Tee sheet grid */
+.teesheet-grid {
+  flex: 1; overflow-y: auto;
+}
+.tsg-col-header {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px 80px 100px;
+  gap: 0;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--stone);
+  background: var(--cream);
+  position: sticky; top: 0; z-index: 2;
+}
+.tsg-ch {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ts-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px 80px 100px;
+  gap: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--stone);
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.ts-row:hover { background: var(--cream); }
+.ts-row.past { opacity: 0.45; }
+.ts-row.now { background: #f0fdf4; border-left: 3px solid var(--grass); padding-left: 15px; }
+.ts-row.blocked-row { background: var(--cream); }
+
+.ts-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px; font-weight: 500;
+  color: var(--ink);
+}
+.ts-row.past .ts-time { color: var(--muted); }
+.ts-row.now .ts-time { color: var(--fairway); font-weight: 700; }
+
+.ts-booking { display: flex; flex-direction: column; gap: 2px; }
+.ts-guest { font-size: 13px; font-weight: 500; color: var(--ink); }
+.ts-ref {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; color: var(--muted);
+}
+.ts-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+.ts-blocked-label {
+  font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.block-pill {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 10px;
+  background: var(--cream); color: var(--muted);
+  border: 1px solid var(--stone);
+}
+
+.ts-players {
+  display: flex; gap: 3px; align-items: center;
+}
+.pip-s {
+  width: 7px; height: 7px;
+  border-radius: 50%; background: var(--grass);
+}
+.pip-s.empty { background: var(--stone); }
+
+.ts-status {}
+.status-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 10px;
+}
+.sb-confirmed { background: var(--success-light); color: var(--success); }
+.sb-checkedin { background: #e8f5ec; color: #1a5c2e; }
+.sb-noshow { background: var(--danger-light); color: var(--danger); }
+.sb-blocked { background: var(--warning-light); color: var(--warning); }
+.sb-open { background: var(--cream); color: var(--muted); }
+
+.ts-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.ts-action-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; border: none;
+}
+.tab-checkin { background: var(--success-light); color: var(--success); }
+.tab-book { background: var(--cream); color: var(--fairway); border: 1px solid var(--stone); }
+.tab-cancel { background: var(--danger-light); color: var(--danger); }
+
+/* Right panel */
+.right-panel { display: flex; flex-direction: column; gap: 14px; }
+
+/* Upcoming card */
+.panel-card {
+  background: #fff;
+  border: 1px solid var(--stone);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.pc-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.pc-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+.pc-link { font-size: 11px; color: var(--fairway); cursor: pointer; font-weight: 500; }
+
+.alert-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--stone);
+}
+.alert-row:last-child { border-bottom: none; }
+.alert-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 5px;
+}
+.alert-dot.red { background: var(--danger); }
+.alert-dot.amber { background: var(--warning); }
+.alert-dot.green { background: var(--grass); }
+.alert-body { flex: 1; }
+.alert-title { font-size: 12px; font-weight: 600; color: var(--ink); }
+.alert-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+.quick-action-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px; padding: 14px;
+}
+.qa-btn {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1.5px solid var(--stone);
+  background: #fff;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 600;
+  color: var(--ink); cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: all 0.12s;
+}
+.qa-btn:hover { border-color: var(--grass); color: var(--fairway); }
+.qa-btn svg { width: 14px; height: 14px; color: var(--muted); }
+
+/* Utilisation mini chart */
+.util-bar { padding: 14px 16px; }
+.util-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.util-label { font-size: 11px; font-weight: 600; color: var(--muted); }
+.util-pct { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--fairway); }
+.util-track {
+  height: 6px; background: var(--stone); border-radius: 3px;
+  overflow: hidden; margin-bottom: 6px;
+}
+.util-fill { height: 100%; background: var(--grass); border-radius: 3px; }
+.util-sub { font-size: 10px; color: var(--muted); }
+
+/* ══ VIEW 2: FULL TEESHEET ══ */
+.teesheet-full {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.tsf-controls {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0; background: var(--warm-white);
+}
+.tsf-course-tabs { display: flex; gap: 6px; flex: 1; }
+.tsf-tab {
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--stone);
+  background: #fff; color: var(--muted);
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.tsf-tab.active { background: var(--fairway); border-color: var(--fairway); color: #fff; }
+.tsf-tab.full-t { opacity: 0.5; }
+.tsf-filter { display: flex; gap: 6px; }
+.filter-pill {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--stone);
+  background: #fff; color: var(--muted);
+}
+.filter-pill.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+.tsf-body { flex: 1; overflow-y: auto; }
+.tsf-header {
+  display: grid;
+  grid-template-columns: 80px 1fr 110px 100px 120px 110px;
+  gap: 0;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--stone);
+  background: var(--cream);
+  position: sticky; top: 0; z-index: 2;
+}
+.tsf-ch {
+  font-size: 9px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tsf-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 110px 100px 120px 110px;
+  gap: 0;
+  padding: 11px 24px;
+  border-bottom: 1px solid var(--stone);
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.tsf-row:hover { background: var(--cream); }
+.tsf-row.tsf-now { background: #f0fdf4; border-left: 3px solid var(--grass); padding-left: 21px; }
+.tsf-row.tsf-past { opacity: 0.4; }
+.tsf-row.tsf-blocked { background: var(--cream); }
+
+.tsf-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 14px; font-weight: 500; color: var(--ink);
+}
+.tsf-now .tsf-time { color: var(--fairway); font-weight: 700; }
+
+.tsf-guest { font-size: 13px; font-weight: 500; color: var(--ink); }
+.tsf-ref { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.tsf-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+
+.tsf-pips { display: flex; gap: 4px; align-items: center; }
+.pip-m { width: 9px; height: 9px; border-radius: 50%; background: var(--grass); }
+.pip-m.empty { background: var(--stone); }
+.pip-count { font-size: 11px; color: var(--muted); margin-left: 6px; }
+
+.tsf-price {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px; font-weight: 500; color: var(--ink);
+}
+
+.tsf-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.tsf-btn {
+  padding: 5px 12px;
+  border-radius: 7px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; border: none;
+  white-space: nowrap;
+}
+.tsf-btn-book { background: var(--fairway); color: #fff; }
+.tsf-btn-checkin { background: var(--success-light); color: var(--success); }
+.tsf-btn-block { background: var(--warning-light); color: var(--warning); }
+.tsf-btn-cancel { background: var(--danger-light); color: var(--danger); }
+.tsf-btn-unblock { background: var(--cream); color: var(--muted); border: 1px solid var(--stone); }
+
+/* Now indicator line */
+.now-indicator {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 24px;
+  background: #f0fdf4;
+  border-bottom: 1px solid #c8ecd4;
+  position: sticky; top: 36px; z-index: 1;
+}
+.now-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--grass); flex-shrink: 0; }
+.now-label { font-size: 11px; font-weight: 700; color: var(--success); }
+.now-time { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--success); }
+
+/* ══ SLIDE-OVER: BOOKING DETAIL ══ */
+.slideover-wrap {
+  display: flex; height: 860px;
+  background: var(--warm-white);
+  overflow: hidden; border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15), 0 32px 80px rgba(0,0,0,0.4);
+  margin: 0 32px;
+}
+.so-main { flex: 1; background: rgba(0,0,0,0.35); display: flex; align-items: stretch; }
+.so-bg-dim { flex: 1; }
+.slideover {
+  width: 400px; flex-shrink: 0;
+  background: var(--warm-white);
+  display: flex; flex-direction: column;
+  border-left: 1px solid var(--stone);
+}
+.so-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center; gap: 12px;
+}
+.so-close {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--cream); border: 1px solid var(--stone);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 14px; color: var(--muted);
+}
+.so-title { font-family: 'Playfair Display', serif; font-size: 16px; color: var(--ink); flex: 1; }
+
+.so-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+.so-slot-card {
+  background: var(--forest);
+  border-radius: 12px; padding: 16px;
+  margin-bottom: 16px; position: relative; overflow: hidden;
+}
+.ssc-pat {
+  position: absolute; right: -20px; top: -30px;
+  width: 120px; height: 120px; border-radius: 50%;
+  border: 1px solid rgba(74,140,92,0.3);
+}
+.ssc-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 24px; font-weight: 500; color: #fff; margin-bottom: 4px;
+}
+.ssc-details { font-size: 12px; color: rgba(255,255,255,0.55); }
+.ssc-ref {
+  font-family: 'DM Mono', monospace;
+  font-size: 14px; color: var(--gold-light);
+  margin-top: 10px; position: relative; z-index: 1;
+}
+
+.so-section-label {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 10px; margin-top: 16px;
+}
+.so-info-row {
+  display: flex; justify-content: space-between;
+  padding: 9px 0; border-bottom: 1px solid var(--stone);
+  font-size: 13px;
+}
+.so-info-row:last-child { border-bottom: none; }
+.so-info-lbl { color: var(--muted); }
+.so-info-val { font-weight: 500; color: var(--ink); }
+
+/* Player check-in list */
+.player-checkin-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--stone);
+}
+.player-checkin-row:last-child { border-bottom: none; }
+.player-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--cream); border: 1px solid var(--stone);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.player-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--ink); }
+.checkin-toggle {
+  padding: 5px 12px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; cursor: pointer; border: none;
+}
+.ci-checked { background: var(--success-light); color: var(--success); }
+.ci-unchecked { background: var(--cream); color: var(--muted); border: 1px solid var(--stone); }
+.ci-noshow { background: var(--danger-light); color: var(--danger); }
+
+/* Notes */
+.so-notes {
+  background: var(--cream); border-radius: 8px;
+  padding: 10px 12px; font-size: 12px;
+  color: var(--muted); line-height: 1.6;
+  border: 1px solid var(--stone); margin-top: 8px;
+}
+
+.so-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--stone);
+  display: flex; gap: 8px;
+}
+.so-btn {
+  flex: 1; padding: 10px;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; border: none; text-align: center;
+}
+.so-btn-cancel { background: var(--danger-light); color: var(--danger); }
+.so-btn-primary { background: var(--fairway); color: #fff; }
+
+/* ══ VIEW 3: ADD BOOKING MODAL ══ */
+.modal-wrap {
+  display: flex; height: 860px;
+  background: rgba(0,0,0,0.35);
+  overflow: hidden; border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15), 0 32px 80px rgba(0,0,0,0.4);
+  margin: 0 32px;
+  align-items: center; justify-content: center;
+}
+.modal {
+  width: 480px;
+  background: var(--warm-white);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+}
+.modal-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--stone);
+  display: flex; align-items: center;
+}
+.modal-title { font-family: 'Playfair Display', serif; font-size: 16px; color: var(--ink); flex: 1; }
+.modal-close { color: var(--muted); cursor: pointer; font-size: 18px; }
+.modal-body { padding: 20px; }
+.modal-slot-summary {
+  background: var(--cream); border: 1px solid var(--stone);
+  border-radius: 10px; padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px;
+}
+.mss-time {
+  font-family: 'DM Mono', monospace;
+  font-size: 20px; font-weight: 500; color: var(--fairway);
+}
+.mss-details { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.m-field { margin-bottom: 14px; }
+.m-label {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 6px; display: block;
+}
+.m-input {
+  width: 100%; padding: 10px 12px;
+  border: 1.5px solid var(--stone); border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px; color: var(--ink); background: #fff;
+  outline: none;
+}
+.m-input:focus { border-color: var(--grass); }
+.m-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.m-players-control {
+  display: flex; align-items: center;
+  border: 1.5px solid var(--stone); border-radius: 8px;
+  overflow: hidden; background: #fff;
+}
+.mpc-btn {
+  padding: 10px 16px;
+  background: var(--cream); border: none;
+  font-size: 18px; cursor: pointer; color: var(--ink); font-weight: 300;
+}
+.mpc-count {
+  flex: 1; text-align: center;
+  font-family: 'Playfair Display', serif;
+  font-size: 18px; color: var(--ink);
+}
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--stone);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.mf-btn {
+  padding: 10px 20px; border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; border: none;
+}
+.mf-cancel { background: var(--cream); color: var(--muted); border: 1px solid var(--stone); }
+.mf-confirm { background: var(--fairway); color: #fff; }
+
+/* ══ VIEW 4: TABLET ══ */
+.tablet-shell {
+  display: flex; height: 860px;
+  background: var(--warm-white);
+  overflow: hidden; border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15), 0 32px 80px rgba(0,0,0,0.4);
+  margin: 0 32px;
+  max-width: 1024px;
+}
+.tablet-sidebar {
+  width: 64px; flex-shrink: 0;
+  background: var(--sidebar-bg);
+  display: flex; flex-direction: column;
+  align-items: center; padding: 16px 0; gap: 4px;
+  border-right: 1px solid var(--sidebar-border);
+}
+.tab-icon-item {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.12s;
+  color: rgba(255,255,255,0.35);
+}
+.tab-icon-item svg { width: 20px; height: 20px; }
+.tab-icon-item:hover { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+.tab-icon-item.active { background: var(--fairway); color: #fff; }
+.tab-logo-item {
+  width: 36px; height: 36px;
+  border-radius: 9px; background: var(--gold);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 700; color: var(--forest);
+  margin-bottom: 8px;
+}
+.tab-divider { width: 32px; height: 1px; background: var(--sidebar-border); margin: 4px 0; }
+
+.tablet-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.tab-topbar {
+  height: 52px; flex-shrink: 0;
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 12px;
+  border-bottom: 1px solid var(--stone);
+  background: var(--warm-white);
+}
+.tab-topbar-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 16px; color: var(--ink); flex: 1;
+}
+.tab-date-nav {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--cream); border: 1px solid var(--stone);
+  border-radius: 8px; padding: 6px 10px;
+}
+.tab-date-nav span {
+  font-size: 13px; font-weight: 500; color: var(--ink);
+}
+.tab-date-nav .arr { color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+.tab-actions { display: flex; gap: 6px; }
+.tab-action-btn {
+  padding: 6px 12px; border-radius: 7px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; border: none;
+}
+.tab-btn-ghost { background: var(--cream); color: var(--ink); border: 1px solid var(--stone); }
+.tab-btn-primary { background: var(--fairway); color: #fff; }
+
+.tab-course-strip {
+  display: flex; gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--stone);
+  overflow-x: auto; scrollbar-width: none; flex-shrink: 0;
+}
+.tab-course-strip::-webkit-scrollbar { display: none; }
+.tab-cp {
+  flex-shrink: 0; padding: 6px 14px;
+  border-radius: 20px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--stone);
+  background: #fff; color: var(--muted); white-space: nowrap;
+}
+.tab-cp.active { background: var(--fairway); border-color: var(--fairway); color: #fff; }
+.tab-cp.full-cp { opacity: 0.5; }
+
+.tab-teesheet { flex: 1; overflow-y: auto; }
+.tab-ts-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 90px 80px 90px;
+  gap: 0; padding: 10px 16px;
+  border-bottom: 1px solid var(--stone);
+  align-items: center; cursor: pointer;
+  transition: background 0.1s;
+}
+.tab-ts-row:hover { background: var(--cream); }
+.tab-ts-row.tab-now { background: #f0fdf4; border-left: 3px solid var(--grass); padding-left: 13px; }
+.tab-ts-row.tab-past { opacity: 0.38; }
+.tab-ts-time { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; color: var(--ink); }
+.tab-now .tab-ts-time { color: var(--fairway); font-weight: 700; }
+.tab-ts-guest { font-size: 13px; font-weight: 500; color: var(--ink); }
+.tab-ts-ref { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 1px; }
+.tab-ts-empty { font-size: 12px; color: var(--muted); font-style: italic; }
+.tab-ts-pips { display: flex; gap: 3px; }
+.pip-t { width: 8px; height: 8px; border-radius: 50%; background: var(--grass); }
+.pip-t.empty { background: var(--stone); }
+.tab-ts-btn {
+  padding: 5px 10px; border-radius: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; font-weight: 600;
+  cursor: pointer; border: none; white-space: nowrap;
+}
+</style>
+</head>
+<body>
+
+<!-- ══ VIEW 1: DASHBOARD + TEESHEET ══ -->
+<div class="page-wrap">
+<span class="screen-label">1 · Dashboard — overview + tee sheet preview (desktop 1280px)</span>
+<div class="app-shell">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark-s">T</div>
+      <div class="logo-text-s">TeeTimes</div>
+    </div>
+    <div class="club-switcher">
+      <div class="cs-avatar">PB</div>
+      <div class="cs-info">
+        <div class="cs-name">Pinebrook GC</div>
+        <div class="cs-role">Club admin</div>
+      </div>
+      <div class="cs-chevron">⌄</div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Operations</div>
+      <div class="nav-item active">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+        <span class="nav-label-s">Dashboard</span>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div>
+        <span class="nav-label-s">Tee sheet</span>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+        <span class="nav-label-s">Bookings</span>
+        <div class="nav-badge">3</div>
+      </div>
+      <div class="nav-divider"></div>
+      <div class="nav-section-label">Management</div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div>
+        <span class="nav-label-s">Courses</span>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <span class="nav-label-s">Staff</span>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
+        <span class="nav-label-s">Settings</span>
+      </div>
+      <div class="nav-item">
+        <div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></div>
+        <span class="nav-label-s">Public page</span>
+      </div>
+    </div>
+    <div class="sidebar-bottom">
+      <div class="user-row">
+        <div class="user-avatar">GH</div>
+        <div class="user-name">Gary Hyde</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main-content">
+    <div class="top-bar">
+      <div class="top-bar-title">Good morning, Gary</div>
+      <div class="top-bar-date">
+        <span class="tbd-prev">‹</span>
+        <span style="font-size:13px;font-weight:500;color:var(--ink)">Saturday, April 5</span>
+        <span class="tbd-next">›</span>
+      </div>
+      <div class="tbd-today">Today</div>
+      <div class="top-bar-actions">
+        <button class="tb-btn tb-btn-ghost">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          Block slot
+        </button>
+        <button class="tb-btn tb-btn-primary">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add booking
+        </button>
+      </div>
+    </div>
+
+    <div class="dashboard-content">
+      <!-- Stats -->
+      <div class="stat-cards">
+        <div class="stat-card green">
+          <div class="sc-label">Booked today</div>
+          <div class="sc-value">34</div>
+          <div class="sc-sub"><span class="sc-delta up">↑ 12%</span> vs last Saturday</div>
+        </div>
+        <div class="stat-card gold">
+          <div class="sc-label">Utilisation</div>
+          <div class="sc-value">71%</div>
+          <div class="sc-sub">42 of 60 slots filled</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="sc-label">Revenue today</div>
+          <div class="sc-value">$2,210</div>
+          <div class="sc-sub"><span class="sc-delta up">↑ 8%</span> vs last Saturday</div>
+        </div>
+        <div class="stat-card red">
+          <div class="sc-label">No-shows today</div>
+          <div class="sc-value">2</div>
+          <div class="sc-sub"><span class="sc-delta down">↑ 1</span> vs average</div>
+        </div>
+      </div>
+
+      <!-- Two column -->
+      <div class="main-grid">
+        <!-- Tee sheet preview -->
+        <div class="teesheet-card">
+          <div class="tc-header">
+            <div class="tc-title">Today's tee sheet</div>
+            <div class="course-pills">
+              <div class="cp full">Championship</div>
+              <div class="cp active">Meadows</div>
+              <div class="cp">Pines</div>
+              <div class="cp">Lakes</div>
+            </div>
+            <div class="tc-view-all">Full view →</div>
+          </div>
+          <div class="teesheet-grid">
+            <div class="tsg-col-header">
+              <span class="tsg-ch">Time</span>
+              <span class="tsg-ch">Guest</span>
+              <span class="tsg-ch">Spots</span>
+              <span class="tsg-ch">Status</span>
+              <span class="tsg-ch"></span>
+            </div>
+            <!-- Past rows -->
+            <div class="ts-row past">
+              <div class="ts-time">6:00 AM</div>
+              <div class="ts-booking"><div class="ts-guest">Martinez, J.</div><div class="ts-ref">PINE-A3F9K2</div></div>
+              <div class="ts-players"><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-checkedin">✓ Checked in</span></div>
+              <div class="ts-actions"></div>
+            </div>
+            <div class="ts-row past">
+              <div class="ts-time">6:10 AM</div>
+              <div class="ts-booking"><div class="ts-empty">Empty</div></div>
+              <div class="ts-players"><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-open">Open</span></div>
+              <div class="ts-actions"></div>
+            </div>
+            <!-- NOW indicator row -->
+            <div class="ts-row now">
+              <div class="ts-time">9:40 AM ▶</div>
+              <div class="ts-booking"><div class="ts-guest">Thompson, R.</div><div class="ts-ref">PINE-B7X2M1</div></div>
+              <div class="ts-players"><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-confirmed">Confirmed</span></div>
+              <div class="ts-actions">
+                <button class="ts-action-btn tab-checkin">Check in</button>
+                <button class="ts-action-btn tab-cancel">Cancel</button>
+              </div>
+            </div>
+            <div class="ts-row">
+              <div class="ts-time">9:50 AM</div>
+              <div class="ts-booking"><div class="ts-guest">Williams, S.</div><div class="ts-ref">PINE-C4K8P3</div></div>
+              <div class="ts-players"><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s"></div></div>
+              <div class="ts-status"><span class="status-badge sb-confirmed">Confirmed</span></div>
+              <div class="ts-actions">
+                <button class="ts-action-btn tab-checkin">Check in</button>
+                <button class="ts-action-btn tab-cancel">Cancel</button>
+              </div>
+            </div>
+            <div class="ts-row blocked-row">
+              <div class="ts-time">10:00 AM</div>
+              <div class="ts-blocked-label"><div class="block-pill">Blocked</div> Staff event</div>
+              <div class="ts-players"><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-blocked">⊘ Blocked</span></div>
+              <div class="ts-actions"></div>
+            </div>
+            <div class="ts-row">
+              <div class="ts-time">10:10 AM</div>
+              <div class="ts-booking"><div class="ts-empty">Open</div></div>
+              <div class="ts-players"><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-open">Open</span></div>
+              <div class="ts-actions"><button class="ts-action-btn tab-book">Book</button></div>
+            </div>
+            <div class="ts-row">
+              <div class="ts-time">10:20 AM</div>
+              <div class="ts-booking"><div class="ts-guest">Chen, L.</div><div class="ts-ref">PINE-D9R1N4</div></div>
+              <div class="ts-players"><div class="pip-s"></div><div class="pip-s"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-noshow">No-show</span></div>
+              <div class="ts-actions"></div>
+            </div>
+            <div class="ts-row">
+              <div class="ts-time">10:30 AM</div>
+              <div class="ts-booking"><div class="ts-empty">Open</div></div>
+              <div class="ts-players"><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div><div class="pip-s empty"></div></div>
+              <div class="ts-status"><span class="status-badge sb-open">Open</span></div>
+              <div class="ts-actions"><button class="ts-action-btn tab-book">Book</button></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right panel -->
+        <div class="right-panel">
+          <!-- Alerts -->
+          <div class="panel-card">
+            <div class="pc-header"><div class="pc-title">Alerts</div><div class="pc-link">View all</div></div>
+            <div class="alert-row">
+              <div class="alert-dot red"></div>
+              <div class="alert-body">
+                <div class="alert-title">2 no-shows this morning</div>
+                <div class="alert-sub">6:10 AM and 8:40 AM — Meadows</div>
+              </div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-dot amber"></div>
+              <div class="alert-body">
+                <div class="alert-title">Championship fully booked</div>
+                <div class="alert-sub">All 60 slots taken for today</div>
+              </div>
+            </div>
+            <div class="alert-row">
+              <div class="alert-dot green"></div>
+              <div class="alert-body">
+                <div class="alert-title">3 new bookings overnight</div>
+                <div class="alert-sub">Meadows · 2:14 AM – 6:42 AM</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick actions -->
+          <div class="panel-card">
+            <div class="pc-header"><div class="pc-title">Quick actions</div></div>
+            <div class="quick-action-grid">
+              <button class="qa-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add booking
+              </button>
+              <button class="qa-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/></svg>
+                Block slot
+              </button>
+              <button class="qa-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Invite staff
+              </button>
+              <button class="qa-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                View report
+              </button>
+            </div>
+          </div>
+
+          <!-- Utilisation -->
+          <div class="panel-card">
+            <div class="pc-header"><div class="pc-title">Today's utilisation</div></div>
+            <div class="util-bar">
+              <div class="util-header"><span class="util-label">The Meadows</span><span class="util-pct">71%</span></div>
+              <div class="util-track"><div class="util-fill" style="width:71%"></div></div>
+              <div class="util-sub">42 of 60 slots booked</div>
+            </div>
+            <div class="util-bar">
+              <div class="util-header"><span class="util-label">The Pines</span><span class="util-pct">48%</span></div>
+              <div class="util-track"><div class="util-fill" style="width:48%;background:var(--gold)"></div></div>
+              <div class="util-sub">29 of 60 slots booked</div>
+            </div>
+            <div class="util-bar">
+              <div class="util-header"><span class="util-label">The Lakes</span><span class="util-pct">35%</span></div>
+              <div class="util-track"><div class="util-fill" style="width:35%;background:var(--gold)"></div></div>
+              <div class="util-sub">21 of 60 slots booked</div>
+            </div>
+            <div class="util-bar">
+              <div class="util-header"><span class="util-label">The Championship</span><span class="util-pct">100%</span></div>
+              <div class="util-track"><div class="util-fill" style="width:100%;background:var(--danger)"></div></div>
+              <div class="util-sub">60 of 60 — fully booked</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ VIEW 2: FULL TEE SHEET ══ -->
+<div class="page-wrap">
+<span class="screen-label">2 · Full tee sheet view</span>
+<div class="app-shell">
+  <div class="sidebar">
+    <div class="sidebar-logo"><div class="logo-mark-s">T</div><div class="logo-text-s">TeeTimes</div></div>
+    <div class="club-switcher"><div class="cs-avatar">PB</div><div class="cs-info"><div class="cs-name">Pinebrook GC</div><div class="cs-role">Club admin</div></div><div class="cs-chevron">⌄</div></div>
+    <div class="nav-section">
+      <div class="nav-section-label">Operations</div>
+      <div class="nav-item"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div><span class="nav-label-s">Dashboard</span></div>
+      <div class="nav-item active"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/></svg></div><span class="nav-label-s">Tee sheet</span></div>
+      <div class="nav-item"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div><span class="nav-label-s">Bookings</span><div class="nav-badge">3</div></div>
+      <div class="nav-divider"></div>
+      <div class="nav-section-label">Management</div>
+      <div class="nav-item"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></div><span class="nav-label-s">Courses</span></div>
+      <div class="nav-item"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><span class="nav-label-s">Staff</span></div>
+      <div class="nav-item"><div class="nav-icon-s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div><span class="nav-label-s">Settings</span></div>
+    </div>
+    <div class="sidebar-bottom"><div class="user-row"><div class="user-avatar">GH</div><div class="user-name">Gary Hyde</div></div></div>
+  </div>
+  <div class="main-content">
+    <div class="top-bar">
+      <div class="top-bar-title">Tee sheet</div>
+      <div class="top-bar-date">
+        <span class="tbd-prev">‹</span>
+        <span style="font-size:13px;font-weight:500;color:var(--ink)">Saturday, April 5</span>
+        <span class="tbd-next">›</span>
+      </div>
+      <div class="tbd-today">Today</div>
+      <div class="top-bar-actions">
+        <button class="tb-btn tb-btn-ghost">Block slot</button>
+        <button class="tb-btn tb-btn-primary">+ Add booking</button>
+      </div>
+    </div>
+    <div class="teesheet-full">
+      <div class="tsf-controls">
+        <div class="tsf-course-tabs">
+          <div class="tsf-tab full-t">Championship — full</div>
+          <div class="tsf-tab active">The Meadows</div>
+          <div class="tsf-tab">The Pines</div>
+          <div class="tsf-tab">The Lakes (9h)</div>
+        </div>
+        <div class="tsf-filter">
+          <div class="filter-pill active">All</div>
+          <div class="filter-pill">Open</div>
+          <div class="filter-pill">Booked</div>
+          <div class="filter-pill">Upcoming</div>
+        </div>
+      </div>
+      <div class="tsf-body">
+        <div class="tsf-header">
+          <span class="tsf-ch">Time</span>
+          <span class="tsf-ch">Guest</span>
+          <span class="tsf-ch">Players</span>
+          <span class="tsf-ch">Price</span>
+          <span class="tsf-ch">Status</span>
+          <span class="tsf-ch"></span>
+        </div>
+        <div class="tsf-row tsf-past">
+          <div class="tsf-time">6:00 AM</div>
+          <div><div class="tsf-guest">Martinez, J.</div><div class="tsf-ref">PINE-A3F9K2</div></div>
+          <div class="tsf-pips"><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m empty"></div><div class="pip-m empty"></div><span class="pip-count">2/4</span></div>
+          <div class="tsf-price">$130</div>
+          <div><span class="status-badge sb-checkedin">✓ Checked in</span></div>
+          <div class="tsf-actions"></div>
+        </div>
+        <div class="tsf-row tsf-past">
+          <div class="tsf-time">6:10 AM</div>
+          <div><div class="tsf-empty">No booking</div></div>
+          <div class="tsf-pips"><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div></div>
+          <div class="tsf-price">—</div>
+          <div><span class="status-badge sb-open">Open</span></div>
+          <div class="tsf-actions"></div>
+        </div>
+        <div class="now-indicator">
+          <div class="now-dot"></div>
+          <span class="now-label">Now</span>
+          <span class="now-time">9:38 AM</span>
+        </div>
+        <div class="tsf-row tsf-now">
+          <div class="tsf-time">9:40 AM</div>
+          <div><div class="tsf-guest">Thompson, R.</div><div class="tsf-ref">PINE-B7X2M1</div></div>
+          <div class="tsf-pips"><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m empty"></div><span class="pip-count">3/4</span></div>
+          <div class="tsf-price">$195</div>
+          <div><span class="status-badge sb-confirmed">Confirmed</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-checkin">Check in</button><button class="tsf-btn tsf-btn-cancel">Cancel</button></div>
+        </div>
+        <div class="tsf-row">
+          <div class="tsf-time">9:50 AM</div>
+          <div><div class="tsf-guest">Williams, S.</div><div class="tsf-ref">PINE-C4K8P3</div></div>
+          <div class="tsf-pips"><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m"></div><span class="pip-count">4/4</span></div>
+          <div class="tsf-price">$260</div>
+          <div><span class="status-badge sb-confirmed">Confirmed</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-checkin">Check in</button><button class="tsf-btn tsf-btn-cancel">Cancel</button></div>
+        </div>
+        <div class="tsf-row tsf-blocked">
+          <div class="tsf-time">10:00 AM</div>
+          <div><div class="tsf-guest" style="color:var(--muted)">Staff event</div></div>
+          <div class="tsf-pips"></div>
+          <div class="tsf-price">—</div>
+          <div><span class="status-badge sb-blocked">⊘ Blocked</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-unblock">Unblock</button></div>
+        </div>
+        <div class="tsf-row">
+          <div class="tsf-time">10:10 AM</div>
+          <div><div class="tsf-empty">Open</div></div>
+          <div class="tsf-pips"><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div></div>
+          <div class="tsf-price">$65</div>
+          <div><span class="status-badge sb-open">Open</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-book">Book</button><button class="tsf-btn tsf-btn-block">Block</button></div>
+        </div>
+        <div class="tsf-row">
+          <div class="tsf-time">10:20 AM</div>
+          <div><div class="tsf-guest">Chen, L.</div><div class="tsf-ref">PINE-D9R1N4</div></div>
+          <div class="tsf-pips"><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m empty"></div><div class="pip-m empty"></div><span class="pip-count">2/4</span></div>
+          <div class="tsf-price">$130</div>
+          <div><span class="status-badge sb-noshow">No-show</span></div>
+          <div class="tsf-actions"></div>
+        </div>
+        <div class="tsf-row">
+          <div class="tsf-time">10:30 AM</div>
+          <div><div class="tsf-empty">Open</div></div>
+          <div class="tsf-pips"><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div><div class="pip-m empty"></div></div>
+          <div class="tsf-price">$65</div>
+          <div><span class="status-badge sb-open">Open</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-book">Book</button><button class="tsf-btn tsf-btn-block">Block</button></div>
+        </div>
+        <div class="tsf-row">
+          <div class="tsf-time">10:40 AM</div>
+          <div><div class="tsf-guest">Park, H.</div><div class="tsf-ref">PINE-E2W5Q7</div></div>
+          <div class="tsf-pips"><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m"></div><div class="pip-m"></div><span class="pip-count">4/4</span></div>
+          <div class="tsf-price">$260</div>
+          <div><span class="status-badge sb-confirmed">Confirmed</span></div>
+          <div class="tsf-actions"><button class="tsf-btn tsf-btn-checkin">Check in</button><button class="tsf-btn tsf-btn-cancel">Cancel</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ VIEW 3: BOOKING DETAIL SLIDE-OVER ══ -->
+<div class="page-wrap">
+<span class="screen-label">3 · Booking detail — slide-over panel (triggered by clicking any row)</span>
+<div class="slideover-wrap">
+  <div class="so-main">
+    <div class="so-bg-dim"></div>
+  </div>
+  <div class="slideover">
+    <div class="so-header">
+      <div class="so-close">✕</div>
+      <div class="so-title">Booking detail</div>
+      <span class="status-badge sb-confirmed" style="font-size:11px">Confirmed</span>
+    </div>
+    <div class="so-body">
+      <div class="so-slot-card">
+        <div class="ssc-pat"></div>
+        <div class="ssc-time">9:40 AM</div>
+        <div class="ssc-details">The Meadows · Saturday, April 5 · 3 players</div>
+        <div class="ssc-ref">PINE-B7X2M1</div>
+      </div>
+
+      <div class="so-section-label">Booking info</div>
+      <div class="so-info-row"><span class="so-info-lbl">Guest name</span><span class="so-info-val">Robert Thompson</span></div>
+      <div class="so-info-row"><span class="so-info-lbl">Email</span><span class="so-info-val">r.thompson@gmail.com</span></div>
+      <div class="so-info-row"><span class="so-info-lbl">Phone</span><span class="so-info-val">+1 (201) 555-0147</span></div>
+      <div class="so-info-row"><span class="so-info-lbl">Players</span><span class="so-info-val">3 of 4 spots</span></div>
+      <div class="so-info-row"><span class="so-info-lbl">Price</span><span class="so-info-val">$195 ($65 × 3)</span></div>
+      <div class="so-info-row"><span class="so-info-lbl">Booked</span><span class="so-info-val">Apr 4 at 11:23 PM</span></div>
+
+      <div class="so-section-label">Player check-in</div>
+      <div class="player-checkin-row">
+        <div class="player-avatar">RT</div>
+        <div class="player-name">Robert Thompson</div>
+        <button class="checkin-toggle ci-checked">✓ In</button>
+      </div>
+      <div class="player-checkin-row">
+        <div class="player-avatar">JT</div>
+        <div class="player-name">James Thompson</div>
+        <button class="checkin-toggle ci-unchecked">Check in</button>
+      </div>
+      <div class="player-checkin-row">
+        <div class="player-avatar">?</div>
+        <div class="player-name">Guest (unnamed)</div>
+        <button class="checkin-toggle ci-noshow">No-show</button>
+      </div>
+
+      <div class="so-section-label">Special requests</div>
+      <div class="so-notes">Left-handed clubs for 2 players. Electric cart requested.</div>
+    </div>
+    <div class="so-footer">
+      <button class="so-btn so-btn-cancel">Cancel booking</button>
+      <button class="so-btn so-btn-primary">Save changes</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ VIEW 4: ADD BOOKING MODAL ══ -->
+<div class="page-wrap">
+<span class="screen-label">4 · Add booking — modal (triggered by "Add booking" button or clicking open slot)</span>
+<div class="modal-wrap">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add booking</div>
+      <div class="modal-close">✕</div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-slot-summary">
+        <div class="mss-time">9:50 AM</div>
+        <div class="mss-details">The Meadows · Saturday, April 5<br>$65 per player</div>
+      </div>
+      <div class="m-row">
+        <div class="m-field">
+          <label class="m-label">Guest name</label>
+          <input class="m-input" type="text" placeholder="Full name" />
+        </div>
+        <div class="m-field">
+          <label class="m-label">Email</label>
+          <input class="m-input" type="email" placeholder="email@example.com" />
+        </div>
+      </div>
+      <div class="m-row">
+        <div class="m-field">
+          <label class="m-label">Phone <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#aaa">optional</span></label>
+          <input class="m-input" type="tel" placeholder="+1 (555) 000-0000" />
+        </div>
+        <div class="m-field">
+          <label class="m-label">Players</label>
+          <div class="m-players-control">
+            <button class="mpc-btn">−</button>
+            <span class="mpc-count">2</span>
+            <button class="mpc-btn">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="m-field">
+        <label class="m-label">Notes <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#aaa">optional</span></label>
+        <input class="m-input" type="text" placeholder="Special requests, equipment needs…" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="mf-btn mf-cancel">Cancel</button>
+      <button class="mf-btn mf-confirm">Confirm booking</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ VIEW 5: TABLET ══ -->
+<div class="page-wrap">
+<span class="screen-label">5 · Tablet view — iPad landscape 1024px (icon sidebar + full tee sheet)</span>
+<div class="tablet-shell">
+  <div class="tablet-sidebar">
+    <div class="tab-logo-item">T</div>
+    <div class="tab-icon-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="2"/></svg>
+    </div>
+    <div class="tab-icon-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    </div>
+    <div class="tab-icon-item" style="position:relative">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <div style="position:absolute;top:6px;right:6px;width:8px;height:8px;border-radius:50%;background:var(--danger);border:1.5px solid var(--sidebar-bg)"></div>
+    </div>
+    <div class="tab-divider"></div>
+    <div class="tab-icon-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+    </div>
+    <div class="tab-icon-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    </div>
+    <div class="tab-icon-item" style="margin-top:auto">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+    </div>
+  </div>
+  <div class="tablet-main">
+    <div class="tab-topbar">
+      <div class="tab-topbar-title">Tee sheet</div>
+      <div class="tab-date-nav">
+        <span class="arr">‹</span>
+        <span>Sat, Apr 5</span>
+        <span class="arr">›</span>
+      </div>
+      <div class="tab-actions">
+        <button class="tab-action-btn tab-btn-ghost">Block</button>
+        <button class="tab-action-btn tab-btn-primary">+ Add</button>
+      </div>
+    </div>
+    <div class="tab-course-strip">
+      <div class="tab-cp full-cp">Championship — full</div>
+      <div class="tab-cp active">The Meadows</div>
+      <div class="tab-cp">The Pines</div>
+      <div class="tab-cp">The Lakes (9h)</div>
+    </div>
+    <div class="tab-teesheet">
+      <div class="tsf-header" style="padding:8px 16px;grid-template-columns:70px 1fr 90px 80px 90px">
+        <span class="tsf-ch">Time</span><span class="tsf-ch">Guest</span>
+        <span class="tsf-ch">Players</span><span class="tsf-ch">Status</span><span class="tsf-ch"></span>
+      </div>
+      <div class="tab-ts-row tab-past">
+        <div class="tab-ts-time">6:00 AM</div>
+        <div><div class="tab-ts-guest">Martinez, J.</div><div class="tab-ts-ref">PINE-A3F9K2</div></div>
+        <div class="tab-ts-pips"><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t empty"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-checkedin" style="font-size:10px">✓ In</span></div>
+        <div></div>
+      </div>
+      <div class="tab-ts-row tab-past">
+        <div class="tab-ts-time">6:10 AM</div>
+        <div><div class="tab-ts-empty">Open</div></div>
+        <div class="tab-ts-pips"><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-open" style="font-size:10px">Open</span></div>
+        <div></div>
+      </div>
+      <div class="tab-ts-row tab-now">
+        <div class="tab-ts-time">9:40 AM ▶</div>
+        <div><div class="tab-ts-guest">Thompson, R.</div><div class="tab-ts-ref">PINE-B7X2M1</div></div>
+        <div class="tab-ts-pips"><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-confirmed" style="font-size:10px">Confirmed</span></div>
+        <div><button class="tab-ts-btn" style="background:var(--success-light);color:var(--success);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:none;cursor:pointer">Check in</button></div>
+      </div>
+      <div class="tab-ts-row">
+        <div class="tab-ts-time">9:50 AM</div>
+        <div><div class="tab-ts-guest">Williams, S.</div><div class="tab-ts-ref">PINE-C4K8P3</div></div>
+        <div class="tab-ts-pips"><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t"></div></div>
+        <div><span class="status-badge sb-confirmed" style="font-size:10px">Confirmed</span></div>
+        <div><button class="tab-ts-btn" style="background:var(--success-light);color:var(--success);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:none;cursor:pointer">Check in</button></div>
+      </div>
+      <div class="tab-ts-row" style="background:var(--cream)">
+        <div class="tab-ts-time">10:00 AM</div>
+        <div><div class="tab-ts-guest" style="color:var(--muted)">Staff event</div></div>
+        <div class="tab-ts-pips"></div>
+        <div><span class="status-badge sb-blocked" style="font-size:10px">Blocked</span></div>
+        <div></div>
+      </div>
+      <div class="tab-ts-row">
+        <div class="tab-ts-time">10:10 AM</div>
+        <div><div class="tab-ts-empty">Open</div></div>
+        <div class="tab-ts-pips"><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-open" style="font-size:10px">Open</span></div>
+        <div><button class="tab-ts-btn" style="background:var(--fairway);color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:none;cursor:pointer">Book</button></div>
+      </div>
+      <div class="tab-ts-row">
+        <div class="tab-ts-time">10:20 AM</div>
+        <div><div class="tab-ts-guest">Chen, L.</div><div class="tab-ts-ref">PINE-D9R1N4</div></div>
+        <div class="tab-ts-pips"><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t empty"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-noshow" style="font-size:10px">No-show</span></div>
+        <div></div>
+      </div>
+      <div class="tab-ts-row">
+        <div class="tab-ts-time">10:30 AM</div>
+        <div><div class="tab-ts-empty">Open</div></div>
+        <div class="tab-ts-pips"><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div><div class="pip-t empty"></div></div>
+        <div><span class="status-badge sb-open" style="font-size:10px">Open</span></div>
+        <div><button class="tab-ts-btn" style="background:var(--fairway);color:#fff;font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:none;cursor:pointer">Book</button></div>
+      </div>
+      <div class="tab-ts-row">
+        <div class="tab-ts-time">10:40 AM</div>
+        <div><div class="tab-ts-guest">Park, H.</div><div class="tab-ts-ref">PINE-E2W5Q7</div></div>
+        <div class="tab-ts-pips"><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t"></div><div class="pip-t"></div></div>
+        <div><span class="status-badge sb-confirmed" style="font-size:10px">Confirmed</span></div>
+        <div><button class="tab-ts-btn" style="background:var(--success-light);color:var(--success);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;border:none;cursor:pointer">Check in</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</body>
+</html>

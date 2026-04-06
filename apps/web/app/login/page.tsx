@@ -1,89 +1,100 @@
 import Link from "next/link";
+import { AuthShell } from "@/components/auth/AuthShell";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { loginAction } from "./actions";
 
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { next?: string; error?: string };
+  searchParams: { next?: string; error?: string; signedOut?: string };
 }) {
   const next = searchParams.next?.startsWith("/") ? searchParams.next : "/";
   const err = searchParams.error;
+  const signedOut = searchParams.signedOut === "1";
 
   return (
-    <main className="min-h-screen bg-slate-950 flex flex-col items-center justify-center px-4">
+    <AuthShell>
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-white text-center mb-1">
-          TeeTimes
+        <h1 className="text-center font-display text-2xl text-ink">
+          Sign in
         </h1>
-        <p className="text-slate-400 text-center text-sm mb-8">
-          Sign in to the admin console
+        <p className="mt-1 text-center text-sm text-muted">
+          Staff and club admin access
         </p>
 
+        {signedOut && (
+          <p className="mt-6 rounded-xl border border-stone bg-cream px-4 py-3 text-center text-sm text-ink">
+            You&apos;ve been signed out.
+          </p>
+        )}
+
         {err === "forbidden" && (
-          <p className="text-amber-400 text-sm text-center mb-4">
+          <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-900">
             You do not have access to that area.
           </p>
         )}
         {err === "config" && (
-          <p className="text-red-400 text-sm text-center mb-4">
+          <p className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-800">
             Server misconfiguration: set JWT_SECRET or NEXTAUTH_SECRET.
           </p>
         )}
 
         <form
-          className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4"
+          className="mt-8 space-y-4 rounded-xl border border-stone bg-white p-6 shadow-sm"
           action={loginAction}
         >
           <div>
-            <label htmlFor="email" className="block text-xs text-slate-400 mb-1">
+            <label
+              htmlFor="email"
+              className="mb-1 block text-xs font-bold uppercase tracking-widest text-muted"
+            >
               Email
             </label>
-            <input
+            <Input
               id="email"
               name="email"
               type="email"
               required
               autoComplete="email"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             />
           </div>
           <div>
             <label
               htmlFor="password"
-              className="block text-xs text-slate-400 mb-1"
+              className="mb-1 block text-xs font-bold uppercase tracking-widest text-muted"
             >
               Password
             </label>
-            <input
+            <Input
               id="password"
               name="password"
               type="password"
               required
               autoComplete="current-password"
-              className="w-full rounded-lg bg-slate-800 border border-slate-700 text-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
             />
           </div>
           <input type="hidden" name="next" value={next} readOnly />
-          <button
-            type="submit"
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2.5 rounded-lg text-sm transition-colors"
-          >
+          <Button type="submit" className="w-full">
             Sign in
-          </button>
+          </Button>
         </form>
 
         {err === "auth" && (
-          <p className="text-red-400 text-sm text-center mt-4">
+          <p className="mt-4 text-center text-sm text-red-700">
             Invalid email or password.
           </p>
         )}
 
-        <p className="text-slate-500 text-xs text-center mt-8">
-          <Link href="/" className="underline hover:text-slate-400">
+        <p className="mt-8 text-center text-xs text-muted">
+          <Link
+            href="/"
+            className="font-medium text-fairway underline-offset-4 hover:underline"
+          >
             Back to public site
           </Link>
         </p>
       </div>
-    </main>
+    </AuthShell>
   );
 }

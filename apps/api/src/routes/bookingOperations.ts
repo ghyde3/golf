@@ -63,6 +63,60 @@ router.get(
   }
 );
 
+router.get("/:bookingId", authenticate, async (req, res) => {
+  const auth = req.auth;
+  if (!auth) {
+    sendUnauthorized(res);
+    return;
+  }
+
+  const bookingId = String(req.params.bookingId);
+  const booking = await db.query.bookings.findFirst({
+    where: and(eq(bookings.id, bookingId), isNull(bookings.deletedAt)),
+    with: {
+      players: true,
+      teeSlot: { with: { course: { with: { club: true } } } },
+    },
+  });
+
+  if (!booking?.teeSlot?.course?.club) {
+    res.status(404).json({ error: "Not found" });
+    return;
+  }
+
+  const clubId = booking.teeSlot.course.club.id;
+  if (!canAccessClub(auth.roles, clubId)) {
+    sendForbidden(res);
+    return;
+  }
+
+  res.json({
+    id: booking.id,
+    bookingRef: booking.bookingRef,
+    guestName: booking.guestName,
+    guestEmail: booking.guestEmail,
+    playersCount: booking.playersCount,
+    notes: booking.notes,
+    status: booking.status,
+    paymentStatus: booking.paymentStatus,
+    createdAt: booking.createdAt,
+    teeSlot: {
+      id: booking.teeSlot.id,
+      datetime: booking.teeSlot.datetime.toISOString(),
+      price: booking.teeSlot.price ? Number(booking.teeSlot.price) : null,
+      courseId: booking.teeSlot.courseId,
+      courseName: booking.teeSlot.course.name,
+    },
+    players: booking.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      email: p.email,
+      checkedIn: p.checkedIn,
+      noShow: p.noShow,
+    })),
+  });
+});
+
 router.delete("/:bookingId", publicRateLimit, async (req, res) => {
   const bookingId = String(req.params.bookingId);
   const token = typeof req.query.token === "string" ? req.query.token : undefined;

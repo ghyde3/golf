@@ -2,7 +2,7 @@
 
 export function LogoutButton() {
   function logout() {
-    const callback = encodeURIComponent("/login");
+    const callback = encodeURIComponent("/login?signedOut=1");
     window.location.href = `/api/auth/signout?callbackUrl=${callback}`;
   }
 
@@ -10,7 +10,7 @@ export function LogoutButton() {
     <button
       type="button"
       onClick={() => logout()}
-      className="text-sm text-slate-400 hover:text-white transition-colors"
+      className="text-sm text-white/40 transition-colors hover:text-white/70"
     >
       Sign out
     </button>

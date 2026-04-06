@@ -10,6 +10,9 @@ export type CachedAvailabilitySlot = {
   status: string;
   price: number | null;
   slotType: string;
+  /** Present when a booking exists for this persisted tee slot */
+  bookingId?: string | null;
+  bookingRef?: string | null;
 };
 
 export type AvailabilityCacheVariant = number | "full";

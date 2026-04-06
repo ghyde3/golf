@@ -18,9 +18,11 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/platform", platformRoutes);
+// Public routes must run before `/api/clubs/:clubId` or paths like
+// `/api/clubs/public/:slug` are captured as clubId "public" and hit auth (401).
+app.use("/api", publicClubRoutes);
 app.use("/api/clubs/:clubId/manage", clubManageRoutes);
 app.use("/api/clubs/:clubId", clubResources);
-app.use("/api", publicClubRoutes);
 app.use("/api/bookings", bookingOperations);
 
 export default app;

@@ -49,6 +49,11 @@ async function seed() {
       slug: "pinebrook",
       description:
         "A classic 18-hole parkland layout with four distinct courses.",
+      city: "Ridgewood",
+      state: "NJ",
+      latitude: 40.9799,
+      longitude: -74.1099,
+      heroImageUrl: "/pinebrook.png",
     })
     .onConflictDoNothing({ target: clubs.slug })
     .returning();
@@ -178,6 +183,10 @@ async function seed() {
     slug: string;
     description: string;
     courseCount: 1 | 2 | 3 | 4;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
   }[] = [
     {
       name: "Riverbend Golf Club",
@@ -185,6 +194,10 @@ async function seed() {
       description:
         "Riverside layout with forgiving fairways and a strong finishing stretch.",
       courseCount: 2,
+      city: "Doylestown",
+      state: "PA",
+      latitude: 40.346,
+      longitude: -75.1307,
     },
     {
       name: "Oak Ridge Country Club",
@@ -192,24 +205,40 @@ async function seed() {
       description:
         "Private club with tree-lined holes and fast, subtle greens.",
       courseCount: 3,
+      city: "Greenwich",
+      state: "CT",
+      latitude: 41.0262,
+      longitude: -73.6282,
     },
     {
       name: "Sunset Valley Links",
       slug: "sunset-valley",
       description: "Open links-style course that plays firm and fast in the wind.",
       courseCount: 2,
+      city: "Hyannis",
+      state: "MA",
+      latitude: 41.6688,
+      longitude: -70.2962,
     },
     {
       name: "Maplewood Golf & Country",
       slug: "maplewood",
       description: "Family-friendly club with a compact executive loop.",
       courseCount: 1,
+      city: "White Plains",
+      state: "NY",
+      latitude: 41.0534,
+      longitude: -73.8688,
     },
     {
       name: "Cypress Point Municipal",
       slug: "cypress-point",
       description: "Affordable daily-fee course serving the local community.",
       courseCount: 2,
+      city: "Edison",
+      state: "NJ",
+      latitude: 40.5187,
+      longitude: -74.4121,
     },
     {
       name: "Eagle Ridge Resort",
@@ -217,18 +246,30 @@ async function seed() {
       description:
         "Destination resort with multiple routing options and stay-and-play packages.",
       courseCount: 4,
+      city: "Stroudsburg",
+      state: "PA",
+      latitude: 41.0534,
+      longitude: -75.3496,
     },
     {
       name: "Willow Creek Golf Club",
       slug: "willow-creek",
       description: "Parkland design with water in play on half the holes.",
       courseCount: 3,
+      city: "Fairfield",
+      state: "CT",
+      latitude: 41.1415,
+      longitude: -73.2637,
     },
     {
       name: "Highland Park Golf Club",
       slug: "highland-park",
       description: "Hilly terrain with elevated tees and panoramic views.",
       courseCount: 2,
+      city: "Poughkeepsie",
+      state: "NY",
+      latitude: 41.7004,
+      longitude: -73.9209,
     },
   ];
 
@@ -240,6 +281,11 @@ async function seed() {
         name: ec.name,
         slug: ec.slug,
         description: ec.description,
+        city: ec.city,
+        state: ec.state,
+        latitude: ec.latitude,
+        longitude: ec.longitude,
+        heroImageUrl: `/${ec.slug}.png`,
       })
       .onConflictDoNothing({ target: clubs.slug })
       .returning();
@@ -275,6 +321,86 @@ async function seed() {
         await db.insert(courses).values({ clubId: cid, ...c });
       }
     }
+  }
+
+  // Ensure location columns are set when clubs already existed (idempotent)
+  const locationBySlug: Record<
+    string,
+    { city: string; state: string; latitude: number; longitude: number }
+  > = {
+    pinebrook: {
+      city: "Ridgewood",
+      state: "NJ",
+      latitude: 40.9799,
+      longitude: -74.1099,
+    },
+    riverbend: {
+      city: "Doylestown",
+      state: "PA",
+      latitude: 40.346,
+      longitude: -75.1307,
+    },
+    "oak-ridge": {
+      city: "Greenwich",
+      state: "CT",
+      latitude: 41.0262,
+      longitude: -73.6282,
+    },
+    "sunset-valley": {
+      city: "Hyannis",
+      state: "MA",
+      latitude: 41.6688,
+      longitude: -70.2962,
+    },
+    maplewood: {
+      city: "White Plains",
+      state: "NY",
+      latitude: 41.0534,
+      longitude: -73.8688,
+    },
+    "cypress-point": {
+      city: "Edison",
+      state: "NJ",
+      latitude: 40.5187,
+      longitude: -74.4121,
+    },
+    "eagle-ridge": {
+      city: "Stroudsburg",
+      state: "PA",
+      latitude: 41.0534,
+      longitude: -75.3496,
+    },
+    "willow-creek": {
+      city: "Fairfield",
+      state: "CT",
+      latitude: 41.1415,
+      longitude: -73.2637,
+    },
+    "highland-park": {
+      city: "Poughkeepsie",
+      state: "NY",
+      latitude: 41.7004,
+      longitude: -73.9209,
+    },
+  };
+
+  for (const [slug, loc] of Object.entries(locationBySlug)) {
+    await db.update(clubs).set(loc).where(eq(clubs.slug, slug));
+  }
+
+  const heroBySlug: Record<string, string> = {
+    pinebrook: "/pinebrook.png",
+    riverbend: "/riverbend.png",
+    "oak-ridge": "/oak-ridge.png",
+    "sunset-valley": "/sunset-valley.png",
+    maplewood: "/maplewood.png",
+    "cypress-point": "/cypress-point.png",
+    "eagle-ridge": "/eagle-ridge.png",
+    "willow-creek": "/willow-creek.png",
+    "highland-park": "/highland-park.png",
+  };
+  for (const [slug, heroImageUrl] of Object.entries(heroBySlug)) {
+    await db.update(clubs).set({ heroImageUrl }).where(eq(clubs.slug, slug));
   }
 
   console.log("Seed complete!");

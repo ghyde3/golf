@@ -8,6 +8,7 @@ function clubParams(req: Request): ClubParams {
 import { eq, desc, and, asc, inArray } from "drizzle-orm";
 import {
   db,
+  clubs,
   clubConfig,
   courses,
   teeSlots,
@@ -16,6 +17,7 @@ import {
 } from "@teetimes/db";
 import {
   ClubConfigSchema,
+  ClubProfilePatchSchema,
   CourseSchema,
   CoursePatchSchema,
   StaffInviteSchema,
@@ -30,6 +32,60 @@ const router = Router({ mergeParams: true });
 
 router.use(authenticate);
 router.use(requireClubAccess);
+
+router.get("/profile", async (req, res) => {
+  const clubId = clubParams(req).clubId;
+  const club = await db.query.clubs.findFirst({
+    where: eq(clubs.id, clubId),
+    columns: {
+      id: true,
+      name: true,
+      slug: true,
+      heroImageUrl: true,
+    },
+  });
+  if (!club) {
+    res.status(404).json({ error: "Club not found" });
+    return;
+  }
+  res.json({
+    id: club.id,
+    name: club.name,
+    slug: club.slug,
+    heroImageUrl: club.heroImageUrl,
+  });
+});
+
+router.patch(
+  "/profile",
+  requireClubRole(["club_admin"]),
+  async (req, res) => {
+    const clubId = clubParams(req).clubId;
+    const parsed = ClubProfilePatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "Invalid request", details: parsed.error.flatten() });
+      return;
+    }
+
+    const [updated] = await db
+      .update(clubs)
+      .set({ heroImageUrl: parsed.data.heroImageUrl })
+      .where(eq(clubs.id, clubId))
+      .returning({
+        id: clubs.id,
+        heroImageUrl: clubs.heroImageUrl,
+      });
+
+    if (!updated) {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
+
+    res.json(updated);
+  }
+);
 
 function effFrom(v: unknown): string {
   if (typeof v === "string") return v.slice(0, 10);

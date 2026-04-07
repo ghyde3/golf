@@ -1,7 +1,17 @@
 import { Router } from "express";
 import { publicRateLimit, bookingRateLimit } from "../middleware/rateLimit";
-import { eq, desc, sql, and } from "drizzle-orm";
+import {
+  eq,
+  desc,
+  asc,
+  sql,
+  and,
+  or,
+  ilike,
+  type SQL,
+} from "drizzle-orm";
 import { db, clubs, clubConfig, teeSlots, bookings, bookingPlayers } from "@teetimes/db";
+import { escapeLikePattern } from "../lib/escapeLike";
 import { PublicBookingBodySchema } from "@teetimes/validators";
 import { generateUniqueBookingRef } from "../lib/bookingRef";
 import {
@@ -14,6 +24,126 @@ import { buildFilteredAvailability } from "../lib/availabilityMerge";
 import { enqueueEmail, getEmailQueue } from "../lib/queue";
 
 const router = Router();
+
+function haversineMiles(
+  lat1: number,
+  lng1: number,
+  lat2: number | null,
+  lng2: number | null
+): number {
+  if (lat2 == null || lng2 == null) return Number.POSITIVE_INFINITY;
+  const R = 3959;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+router.get("/clubs/public", publicRateLimit, async (req, res) => {
+  try {
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const qRaw = req.query.q;
+    const q =
+      typeof qRaw === "string" && qRaw.trim().length > 0 ? qRaw.trim() : "";
+    const sortRaw = req.query.sort;
+    const sortNew = sortRaw === "new";
+
+    const nearLatRaw = req.query.near_lat;
+    const nearLngRaw = req.query.near_lng;
+    let nearLat: number | null = null;
+    let nearLng: number | null = null;
+    if (typeof nearLatRaw === "string" && typeof nearLngRaw === "string") {
+      const la = Number.parseFloat(nearLatRaw);
+      const ln = Number.parseFloat(nearLngRaw);
+      if (!Number.isNaN(la) && !Number.isNaN(ln)) {
+        nearLat = la;
+        nearLng = ln;
+      }
+    }
+
+    const statusOk: SQL = sql`(${clubs.status} IS NULL OR ${clubs.status} <> 'suspended')`;
+    const filters: SQL[] = [statusOk];
+
+    if (q) {
+      const pattern = `%${escapeLikePattern(q)}%`;
+      filters.push(
+        or(
+          ilike(clubs.name, pattern),
+          ilike(clubs.description, pattern),
+          ilike(clubs.slug, pattern),
+          ilike(clubs.city, pattern),
+          ilike(clubs.state, pattern)
+        )!
+      );
+    }
+
+    const whereClause = and(...filters);
+
+    const rows = await db.query.clubs.findMany({
+      where: whereClause,
+      with: { courses: true },
+      orderBy: sortNew ? [desc(clubs.createdAt)] : [asc(clubs.name)],
+    });
+
+    type Row = (typeof rows)[number];
+    let ordered: Row[] = [...rows];
+    if (nearLat != null && nearLng != null) {
+      ordered.sort((a, b) => {
+        const da = haversineMiles(
+          nearLat!,
+          nearLng!,
+          a.latitude,
+          a.longitude
+        );
+        const db = haversineMiles(
+          nearLat!,
+          nearLng!,
+          b.latitude,
+          b.longitude
+        );
+        return da - db;
+      });
+    }
+
+    const total = ordered.length;
+    const page = ordered.slice(offset, offset + limit);
+
+    res.json({
+      clubs: page.map((c) => {
+        const courseList = c.courses ?? [];
+        const coursesCount = courseList.length;
+        const maxHoles =
+          coursesCount === 0
+            ? 0
+            : Math.max(...courseList.map((x) => x.holes));
+        return {
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          description: c.description,
+          heroImageUrl: c.heroImageUrl,
+          city: c.city,
+          state: c.state,
+          latitude: c.latitude,
+          longitude: c.longitude,
+          coursesCount,
+          maxHoles,
+          createdAt: c.createdAt?.toISOString() ?? null,
+        };
+      }),
+      total,
+      limit,
+      offset,
+    });
+  } catch (error) {
+    console.error("Error listing public clubs:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
   try {

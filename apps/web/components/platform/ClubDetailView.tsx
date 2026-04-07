@@ -1,13 +1,14 @@
 "use client";
 
+import { ListingImageUrlEditor } from "@/components/club/ListingImageUrlEditor";
 import { PlatformClubStatusButton } from "@/components/platform/PlatformClubStatusButton";
 import { SetPlatformTopBar } from "@/components/platform/PlatformTopBarContext";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 
 export type ClubDetailPayload = {
   id: string;
@@ -15,6 +16,7 @@ export type ClubDetailPayload = {
   slug: string;
   status: string | null;
   description: string | null;
+  heroImageUrl: string | null;
   createdAt: string | null;
   subscriptionType: string | null;
   bookingFee: string | null;
@@ -51,6 +53,7 @@ function clubStatusSlot(status: string | null) {
 }
 
 export function ClubDetailView({ club }: { club: ClubDetailPayload }) {
+  const router = useRouter();
   const [status, setStatus] = useState(club.status ?? "active");
 
   useEffect(() => {
@@ -87,18 +90,7 @@ export function ClubDetailView({ club }: { club: ClubDetailPayload }) {
       <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_320px]">
         <div className="flex min-w-0 flex-col gap-6">
           <section className="rounded-xl border border-stone bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="font-display text-lg text-ink">Club info</h2>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="border-stone"
-                onClick={() => toast.info("Coming soon")}
-              >
-                Edit
-              </Button>
-            </div>
+            <h2 className="font-display text-lg text-ink">Club info</h2>
             <dl className="mt-4 grid gap-3 text-sm">
               <div>
                 <dt className="text-[10px] font-bold uppercase tracking-widest text-muted">
@@ -152,6 +144,21 @@ export function ClubDetailView({ club }: { club: ClubDetailPayload }) {
                 </dd>
               </div>
             </dl>
+
+            <div className="mt-6 border-t border-stone pt-5">
+              <h3 className="mb-1 font-display text-base text-ink">
+                Course image (search listing)
+              </h3>
+              <p className="mb-3 text-xs text-muted">
+                Same as club admins set under Settings — public search card image.
+              </p>
+              <ListingImageUrlEditor
+                key={club.heroImageUrl ?? ""}
+                patchUrl={`/api/platform/clubs/${club.id}`}
+                initialHeroImageUrl={club.heroImageUrl}
+                onSaved={() => router.refresh()}
+              />
+            </div>
           </section>
 
           <section>

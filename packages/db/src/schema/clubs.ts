@@ -9,6 +9,7 @@ import {
   time,
   jsonb,
   unique,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -21,6 +22,10 @@ export const clubs = pgTable("clubs", {
   bookingFee: numeric("booking_fee", { precision: 5, scale: 2 }).default("0"),
   description: text("description"),
   heroImageUrl: text("hero_image_url"),
+  city: text("city"),
+  state: text("state"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

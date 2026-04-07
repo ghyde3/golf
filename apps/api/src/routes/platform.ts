@@ -7,7 +7,10 @@ import {
   userRoles,
 } from "@teetimes/db";
 import { eq, desc, sql, and, gte, lt, isNull } from "drizzle-orm";
-import { CreateClubSchema, PlatformClubStatusSchema } from "@teetimes/validators";
+import {
+  CreateClubSchema,
+  PlatformClubPatchSchema,
+} from "@teetimes/validators";
 import { authenticate, requireRole } from "../middleware/auth";
 
 const router = Router();
@@ -106,7 +109,7 @@ router.post("/clubs", async (req, res) => {
     return;
   }
 
-  const { name, slug, timezone, description } = parsed.data;
+  const { name, slug, timezone, description, heroImageUrl } = parsed.data;
   const effectiveFrom = new Date().toISOString().split("T")[0];
 
   try {
@@ -118,6 +121,7 @@ router.post("/clubs", async (req, res) => {
           slug,
           description: description ?? null,
           status: "active",
+          heroImageUrl: heroImageUrl ?? null,
         })
         .returning();
 
@@ -154,15 +158,19 @@ router.post("/clubs", async (req, res) => {
 
 router.patch("/clubs/:clubId", async (req, res) => {
   const { clubId } = req.params;
-  const parsed = PlatformClubStatusSchema.safeParse(req.body);
+  const parsed = PlatformClubPatchSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
     return;
   }
 
+  const patch: { status?: string; heroImageUrl?: string | null } = {};
+  if (parsed.data.status !== undefined) patch.status = parsed.data.status;
+  if (parsed.data.heroImageUrl !== undefined) patch.heroImageUrl = parsed.data.heroImageUrl;
+
   const [updated] = await db
     .update(clubs)
-    .set({ status: parsed.data.status })
+    .set(patch)
     .where(eq(clubs.id, clubId))
     .returning();
 
@@ -176,6 +184,7 @@ router.patch("/clubs/:clubId", async (req, res) => {
     name: updated.name,
     slug: updated.slug,
     status: updated.status,
+    heroImageUrl: updated.heroImageUrl,
   });
 });
 
@@ -206,6 +215,7 @@ router.get("/clubs/:clubId", async (req, res) => {
     slug: club.slug,
     status: club.status,
     description: club.description,
+    heroImageUrl: club.heroImageUrl,
     createdAt: club.createdAt?.toISOString() ?? null,
     subscriptionType: club.subscriptionType,
     bookingFee: club.bookingFee != null ? String(club.bookingFee) : null,

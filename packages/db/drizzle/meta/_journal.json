@@ -8,6 +8,13 @@
       "when": 1775415134326,
       "tag": "0000_tricky_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775521631189,
+      "tag": "0001_charming_hellfire_club",
+      "breakpoints": true
     }
   ]
 }

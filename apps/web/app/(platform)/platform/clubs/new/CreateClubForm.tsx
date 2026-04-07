@@ -36,11 +36,13 @@ export function CreateClubForm() {
     setPending(true);
     const fd = new FormData(e.currentTarget);
     const slugVal = String(fd.get("slug") ?? "").trim().toLowerCase();
+    const heroRaw = String(fd.get("heroImageUrl") ?? "").trim();
     const body = {
       name: String(fd.get("name") ?? "").trim(),
       slug: slugVal,
       timezone: String(fd.get("timezone") ?? "America/New_York"),
       description: String(fd.get("description") ?? "").trim() || undefined,
+      ...(heroRaw.length > 0 ? { heroImageUrl: heroRaw } : {}),
     };
 
     if (!/^[a-z0-9-]+$/.test(slugVal)) {
@@ -151,6 +153,25 @@ export function CreateClubForm() {
           maxLength={500}
           className="min-h-[80px] w-full resize-y rounded-[10px] border-[1.5px] border-stone bg-white px-3.5 py-3 text-sm text-ink outline-none focus:border-grass"
         />
+      </div>
+      <div>
+        <label
+          htmlFor="heroImageUrl"
+          className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted"
+        >
+          Course image URL <span className="font-normal normal-case">(optional)</span>
+        </label>
+        <input
+          id="heroImageUrl"
+          name="heroImageUrl"
+          type="text"
+          placeholder="https://… or /pinebrook.png"
+          className="w-full rounded-[10px] border-[1.5px] border-stone bg-white px-3.5 py-3 text-sm text-ink outline-none focus:border-grass"
+        />
+        <p className="mt-1 text-xs text-muted">
+          Search listing card image. Use a full URL or a path to a file under the web app
+          public folder.
+        </p>
       </div>
       {error && (
         <p className="text-sm text-red-700" role="alert">

@@ -15,6 +15,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { authenticate, requireClubAccess } from "../middleware/auth";
+import { escapeLikePattern } from "../lib/escapeLike";
 
 const router = Router({ mergeParams: true });
 
@@ -113,14 +114,6 @@ function utcDayEndExclusive(isoDate: string): Date {
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + 1);
   return end;
-}
-
-/** Escape `%` / `_` / `\` for use inside ILIKE patterns (literal match). */
-function escapeLikePattern(user: string): string {
-  return user
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
 }
 
 /** Same club scope as `bookingsToday` in GET /summary. Default date range: UTC calendar day on `createdAt` (today if `from`/`to` omitted). */

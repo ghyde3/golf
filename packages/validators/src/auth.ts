@@ -13,6 +13,19 @@ export const PlatformClubStatusSchema = z.object({
 
 export type PlatformClubStatusPatch = z.infer<typeof PlatformClubStatusSchema>;
 
+/** Platform admin: status and/or listing image URL (relative paths like `/club.png` allowed). */
+export const PlatformClubPatchSchema = z
+  .object({
+    status: z.enum(["active", "suspended"]).optional(),
+    heroImageUrl: z.string().max(2048).nullable().optional(),
+  })
+  .refine(
+    (d) => d.status !== undefined || d.heroImageUrl !== undefined,
+    { message: "Provide at least one of status or heroImageUrl" }
+  );
+
+export type PlatformClubPatch = z.infer<typeof PlatformClubPatchSchema>;
+
 export const SetPasswordSchema = z.object({
   token: z.string().min(10),
   password: z.string().min(8).max(100),

@@ -10,6 +10,8 @@ export const CreateClubSchema = z.object({
     ),
   timezone: z.string(),
   description: z.string().max(500).optional(),
+  /** Public search / listing card image (URL or site path like `/pinebrook.png`). */
+  heroImageUrl: z.string().max(2048).optional(),
 });
 
 export const ScheduleDaySchema = z.object({
@@ -34,5 +36,10 @@ export const ClubConfigSchema = z.object({
 });
 
 export type CreateClub = z.infer<typeof CreateClubSchema>;
+
+/** Club admin: listing image shown on public search (URL or path under the web app). */
+export const ClubProfilePatchSchema = z.object({
+  heroImageUrl: z.string().max(2048).nullable(),
+});
 export type ScheduleDay = z.infer<typeof ScheduleDaySchema>;
 export type ClubConfig = z.infer<typeof ClubConfigSchema>;

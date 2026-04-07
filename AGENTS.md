@@ -39,7 +39,7 @@ This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("T
 ### Key gotchas
 - **bcrypt build scripts**: pnpm 10.x blocks native build scripts by default. After `pnpm install`, bcrypt won't have its native bindings. You must manually run its install script (see above) or use `pnpm rebuild bcrypt` won't work because pnpm considers it already installed.
 - **Drizzle config paths**: The `drizzle.config.ts` uses paths relative to the workspace root (not the `packages/db/` directory) because it's invoked from root via `pnpm db:generate`/`pnpm db:migrate`.
-- **Environment variables**: Copy `.env.example` to `.env` at the repo root. The `DATABASE_URL` must be set for DB operations.
+- **Environment variables**: Copy `.env.example` to `.env` at the repo root. The `DATABASE_URL` must be set for DB operations. For the public home/search **Places Autocomplete**, set `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (Maps JavaScript API + Places API enabled in Google Cloud).
 - **Next.js ESLint**: The web app uses `.eslintrc.json` with `next/core-web-vitals`. The API uses flat ESLint config (`eslint.config.mjs`) with `typescript-eslint`.
 - **API server must be running for web pages**: The club profile and booking pages are server components / client components that fetch from the API at `http://localhost:3001`. Start the API before testing web pages.
 - **Slot generation**: Tee slots are generated in-memory from club config (not pre-stored in DB). Only booked/blocked slots persist in the `tee_slots` table. The availability endpoint merges generated slots with DB rows.

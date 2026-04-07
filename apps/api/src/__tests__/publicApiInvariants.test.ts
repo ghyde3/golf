@@ -10,6 +10,11 @@ import app from "../app";
  * (With DB down you may see 404/500; with DB up, 200/404.)
  */
 describe("Public API invariants", () => {
+  it("GET /api/clubs/public is not gated by JWT (not 401)", async () => {
+    const res = await request(app).get("/api/clubs/public");
+    expect(res.status).not.toBe(401);
+  });
+
   it("GET /api/clubs/public/:slug is not gated by JWT (not 401)", async () => {
     const res = await request(app).get("/api/clubs/public/does-not-exist-slug");
     expect(res.status).not.toBe(401);

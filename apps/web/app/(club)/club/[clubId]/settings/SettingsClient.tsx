@@ -1,5 +1,6 @@
 "use client";
 
+import { ListingImageUrlEditor } from "@/components/club/ListingImageUrlEditor";
 import { useState } from "react";
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
 
@@ -57,9 +58,11 @@ const COMMON_TIMEZONES = [
 export function SettingsClient({
   clubId,
   configs: initial,
+  initialHeroImageUrl,
 }: {
   clubId: string;
   configs: ConfigRow[];
+  initialHeroImageUrl: string | null;
 }) {
   const [configs, setConfigs] = useState<ConfigRow[]>(initial);
   const current = configs[0];
@@ -132,6 +135,21 @@ export function SettingsClient({
             Club operational settings. Changes create a new versioned config row
             effective from the date you choose.
           </p>
+        </div>
+
+        <div className="rounded-xl border border-stone bg-white shadow-sm">
+          <div className="border-b border-stone px-4 py-3">
+            <h3 className="font-display text-lg text-ink">Public listing</h3>
+            <p className="mt-1 text-xs text-muted">
+              Image shown on the public course search for your club.
+            </p>
+          </div>
+          <div className="p-4">
+            <ListingImageUrlEditor
+              patchUrl={`/api/clubs/${clubId}/profile`}
+              initialHeroImageUrl={initialHeroImageUrl}
+            />
+          </div>
         </div>
 
         {success && (

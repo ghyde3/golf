@@ -17,7 +17,10 @@ Feature C — Waitlist for Fully-Booked Slots    (no dependencies)
 
 Feature D — Add-On / Upsell Catalog
   └── requires Plan 1 (Inventory) to be complete
-  └── optional: richer with Feature A (source tracking already landed)
+  └── introduces bookingAddonLines with bookingStart/bookingEnd columns
+      (these are the indexed columns Plan 1's overlap query depends on)
+  └── concurrency: all rental availability checks use SELECT...FOR UPDATE
+      on the resourceTypes row
 
 Feature E — Revenue & Occupancy in Reports    (no dependencies for revenue)
   └── occupancy denominator requires slot generator call per day
@@ -403,28 +406,85 @@ No booking add-ons exist. Clubs cannot offer or price extras (cart rental, club 
 | `id` | uuid PK | |
 | `bookingId` | uuid FK → bookings CASCADE | |
 | `addonCatalogId` | uuid FK → addonCatalog RESTRICT | RESTRICT preserves history; deactivate don't delete catalog items |
-| `resourceItemId` | uuid FK → resourceItems SET NULL nullable | Set when staff assigns a specific unit |
+| `resourceTypeId` | uuid FK → resourceTypes SET NULL nullable | Denormalized from addonCatalog at insert time for efficient overlap queries |
+| `resourceItemId` | uuid FK → resourceItems SET NULL nullable | Set when staff assigns a specific unit (manual assignment mode) |
 | `quantity` | int | |
 | `unitPriceCents` | int | Snapshot of `priceCents` at booking time — catalog price changes don't affect past bookings |
+| `bookingStart` | timestamptz nullable | Precomputed: `teeSlot.datetime`. Null for non-rental add-ons. |
+| `bookingEnd` | timestamptz nullable | Precomputed: `teeSlot.datetime + resolvedWindowMinutes + turnaroundBufferMinutes`. Null for non-rental add-ons. |
 | `status` | text | `"pending"` \| `"confirmed"` \| `"cancelled"` |
 | `notes` | text nullable | |
 | `createdAt` | timestamptz defaultNow | |
 
-### Availability Check at Booking Time
+Add a composite index on `(resource_type_id, booking_start, booking_end)` in the migration. This makes the overlap query a fast indexed range scan.
 
-For each requested add-on where `resourceTypeId IS NOT NULL`:
+**Why `bookingStart`/`bookingEnd` are stored, not computed:**
 
-1. Load the linked `resourceType`. Get `usageModel`, `trackingMode`, `trackInventory`, `totalUnits`, `rentalWindows`.
-2. If `usageModel = "consumable"` and `trackInventory = false`: skip check — always available.
-3. If `usageModel = "consumable"` and `trackInventory = true`: check `currentStock >= requestedQuantity`.
+The alternative — resolving the window at query time via `JOIN resource_types + JSON lookup per row` — is expensive and becomes the hot path at scale. Pre-storing the occupied interval at insert time means the overlap query becomes:
+
+```sql
+WHERE bal.resource_type_id = :typeId
+  AND bal.booking_start < :newEnd
+  AND bal.booking_end > :newStart
+  AND bal.status != 'cancelled'
+```
+
+No JSON lookup per row. No join to `tee_slots` or `resource_types` in the overlap clause. If a booking is moved to a different tee slot, the `bookingAddonLines` rows are deleted and re-inserted (with new `bookingStart`/`bookingEnd`) inside the move transaction in `bookingOperations.ts`.
+
+### Availability Check at Booking Time — Concurrency-Safe
+
+> **This check must run inside a DB transaction with a row-level lock.** Without the lock, two concurrent requests can both pass the check and both insert, exceeding capacity (oversell). This is the most critical correctness requirement in this feature.
+
+The transaction pattern for **each** inventory-backed rental add-on:
+
+```sql
+BEGIN;
+
+-- 1. Lock the resource type row for the duration of this transaction.
+--    All other transactions trying to book this resource type will wait here.
+SELECT id, total_units, tracking_mode
+FROM resource_types
+WHERE id = :typeId
+FOR UPDATE;
+
+-- 2. Run the overlap check using the precomputed indexed columns.
+SELECT COALESCE(SUM(quantity * :unitsConsumed), 0) AS allocated
+FROM booking_addon_lines bal
+JOIN bookings b ON bal.booking_id = b.id
+WHERE bal.resource_type_id = :typeId
+  AND bal.status != 'cancelled'
+  AND b.deleted_at IS NULL
+  AND bal.booking_start < :newBookingEnd
+  AND bal.booking_end > :newBookingStart;
+
+-- 3. If totalUnits - allocated >= requestedQuantity: insert.
+INSERT INTO booking_addon_lines (
+  booking_id, addon_catalog_id, resource_type_id,
+  quantity, unit_price_cents,
+  booking_start, booking_end,
+  status
+) VALUES (...);
+
+COMMIT;
+-- Lock released. Next waiting transaction may now proceed.
+```
+
+The lock is held for milliseconds. At golf club volumes this is not a bottleneck. If contention becomes measurable (hundreds of concurrent bookings for the same resource type), the upgrade path is a `resource_reservations` table with TTL holds — but that is explicitly out of scope.
+
+**Full availability check logic per add-on:**
+
+1. Lock the `resourceTypes` row for this add-on (`SELECT ... FOR UPDATE`).
+2. If `usageModel = "consumable"` and `trackInventory = false`: skip — always available. No lock needed; release immediately.
+3. If `usageModel = "consumable"` and `trackInventory = true`: use `UPDATE resource_types SET current_stock = current_stock - :qty WHERE id = :typeId AND current_stock >= :qty RETURNING id`. If no row returned: 409 `ADDON_UNAVAILABLE`.
 4. If `usageModel = "rental"`:
-   - Resolve `windowMinutes` from `rentalWindows` using the booking's `slotType`.
-   - Run the window-overlap query (defined in Plan 1 — Auto-Hold Logic section).
-   - Pool mode: check `totalUnits - allocatedCount >= requestedQuantity × unitsConsumed`.
-   - Individual mode: check `availableItemCount >= requestedQuantity × unitsConsumed`.
-5. If check fails: return 409 `{ code: "ADDON_UNAVAILABLE", addonId, name }`.
+   - Compute `bookingStart = teeSlot.datetime`.
+   - Compute `bookingEnd = teeSlot.datetime + resolvedWindowMinutes + turnaroundBufferMinutes`.
+   - Run the overlap COUNT query above.
+   - Pool mode: available if `totalUnits - allocated >= requestedQuantity × unitsConsumed`.
+   - Individual mode: available if count of `resourceItems WHERE operationalStatus = 'available' AND id NOT IN (SELECT resource_item_id FROM booking_addon_lines WHERE ... overlap ...)` >= `requestedQuantity × unitsConsumed`.
+5. If check fails: rollback and return 409 `{ code: "ADDON_UNAVAILABLE", addonId, name }`.
 
-For add-ons with `resourceTypeId IS NULL`: no inventory check — unlimited.
+For add-ons with `resourceTypeId IS NULL`: no inventory check, no lock, always available.
 
 ### API Endpoints
 
@@ -506,17 +566,31 @@ The `GET /api/bookings/:bookingId` response must be extended to include:
   {
     "id": "uuid",
     "name": "Cart Rental",
-    "quantity": 1,
+    "quantity": 2,
     "unitPriceCents": 2500,
     "status": "confirmed",
-    "resourceItemLabel": "Cart #7"  // null if no item assigned yet
+    "assignmentMode": "manual",      // from resourceType; null for non-inventory add-ons
+    "resourceItemAssignments": [
+      { "slot": 1, "resourceItemId": "uuid", "label": "Cart #4" },
+      { "slot": 2, "resourceItemId": null, "label": null }  // not yet assigned
+    ]
   }
 ]
 ```
 
 `BookingDetail` type in `types.ts` is extended accordingly.
 
-Staff can assign a specific `resourceItem` to a line via a dropdown (rendered when `requiresAssignment = true` and `resourceItemLabel` is null). This calls a new `PATCH /api/bookings/:bookingId/addons/:lineId` endpoint with `{ resourceItemId }`.
+**Assignment display rules:**
+
+- `assignmentMode = "none"` or `resourceTypeId = null`: show name + quantity only. No assignment UI.
+- `assignmentMode = "auto"`: show assigned item labels (set at booking time). No staff action needed.
+- `assignmentMode = "manual"`: show each slot as a row. Unassigned slots show a dropdown of available items from that resource type. Assigned slots show the label with a "Reassign" option.
+
+**Assignment API:** `PATCH /api/bookings/:bookingId/addons/:lineId/assign` with `{ slot: int, resourceItemId: string }`. The endpoint:
+1. Validates the item belongs to the correct resource type and club.
+2. Validates `operationalStatus = "available"`.
+3. Validates the item is not in an active booking window for a different booking (overlap check against `booking_start`/`booking_end` — no lock needed here since this is an assignment to an already-reserved capacity slot, not a new capacity claim).
+4. Sets `resourceItemId` and the relevant slot assignment on the line.
 
 ### Email Extension (`BookingConfirmation.tsx`)
 
@@ -552,21 +626,21 @@ Import `ShoppingBag` from `lucide-react`.
 
 | File | Change |
 |---|---|
-| `packages/db/src/schema/addons.ts` | New file — `addonCatalog` + `bookingAddonLines` tables |
+| `packages/db/src/schema/addons.ts` | New file — `addonCatalog` + `bookingAddonLines` tables (with `bookingStart`, `bookingEnd`, `resourceTypeId` columns) |
 | `packages/db/src/schema/index.ts` | Export new tables |
-| `packages/db/drizzle/` | Generate + apply migration |
+| `packages/db/drizzle/` | Generate + apply migration; includes composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` |
 | `packages/validators/src/addons.ts` | New file |
 | `packages/validators/src/bookings.ts` | Extend `PublicBookingBodySchema` and `CreateBookingSchema` with `addOns` |
 | `packages/validators/src/index.ts` | Export new schemas |
 | `apps/api/src/routes/addons.ts` | New file — catalog CRUD + public endpoint |
 | `apps/api/src/app.ts` | Mount addons router |
-| `apps/api/src/routes/publicClub.ts` | Availability check + addon lines in booking transaction; Stripe amount extension |
-| `apps/api/src/routes/bookingOperations.ts` | Addon lines in staff booking creation; extend GET response; add line assignment PATCH |
+| `apps/api/src/routes/publicClub.ts` | Concurrency-safe availability check + addon lines in booking transaction; Stripe amount extension |
+| `apps/api/src/routes/bookingOperations.ts` | Addon lines in staff booking creation (with lock); extend GET response; add line assignment PATCH; re-insert addon lines on booking move |
 | `apps/api/src/emails/BookingConfirmation.tsx` | Add-on line items section |
 | `apps/web/app/book/[slug]/confirm/page.tsx` | Add-ons stepper + running total |
 | `apps/web/components/teesheet/AddBookingModal.tsx` | Add-ons stepper |
-| `apps/web/components/teesheet/BookingDrawer.tsx` | Add-on lines section + assignment dropdown |
-| `apps/web/components/teesheet/types.ts` | Extend `BookingDetail` with `addons` |
+| `apps/web/components/teesheet/BookingDrawer.tsx` | Add-on lines section + per-slot assignment dropdown for manual mode |
+| `apps/web/components/teesheet/types.ts` | Extend `BookingDetail` with `addons` including `assignmentMode` and `resourceItemAssignments` |
 | `apps/web/app/(club)/club/[clubId]/addons/page.tsx` | New server page |
 | `apps/web/app/(club)/club/[clubId]/addons/AddonsClient.tsx` | New client component |
 | `apps/web/components/club/Sidebar.tsx` | Add "Add-ons" nav entry |
@@ -577,13 +651,16 @@ Import `ShoppingBag` from `lucide-react`.
 |---|---|
 | Create "Cart Rental" linked to "Golf Carts" resource type | Appears in public catalog; linked resource type shown |
 | Golfer selects cart rental at confirm step | Add-on total added to Stripe PaymentIntent amount |
-| Booking confirmed with cart rental | `bookingAddonLine` created with `unitPriceCents` snapshot |
-| Open BookingDrawer on that booking | "Add-ons" section shows "Cart Rental ×1 $25.00" |
-| All 12 carts held by overlapping bookings; new golfer tries to add cart | 409 `ADDON_UNAVAILABLE` response |
+| Booking confirmed with cart rental | `bookingAddonLine` created with `unitPriceCents` snapshot; `bookingStart`/`bookingEnd` precomputed and stored |
+| Open BookingDrawer on booking with 1 cart (manual mode) | "Add-ons" section shows "Cart Rental ×1 $25.00" with unassigned slot and item dropdown |
+| Staff assigns Cart #4 from dropdown | `resourceItemId` set; label "Cart #4" replaces dropdown |
+| Two concurrent requests both try to book the last cart | Only one succeeds; second gets 409 `ADDON_UNAVAILABLE` — row lock prevented oversell |
+| All 12 carts held by overlapping bookings; new golfer tries to add cart | 409 `ADDON_UNAVAILABLE` |
 | Mark Cart #7 in maintenance; only 11 free | Availability drops to 11 |
-| Create "Towels" with no resource link | Always available; no inventory check |
+| Booking with 2 carts (auto mode) | Two `bookingAddonLine` rows created; each has distinct `resourceItemId` auto-assigned |
+| Create "Towels" with no resource link | Always available; no inventory check; no lock acquired |
 | Confirm booking with add-ons | Email includes add-on line items section |
-| Create "Cart Rental" add-on; staff assigns Cart #4 in BookingDrawer | `resourceItemId` set on line; label shows in drawer |
+| Booking is moved to a different tee slot | Old addon lines deleted; new lines inserted with recomputed `bookingStart`/`bookingEnd` |
 
 ---
 

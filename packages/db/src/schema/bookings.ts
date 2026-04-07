@@ -46,6 +46,7 @@ export const bookings = pgTable("bookings", {
   notes: text("notes"),
   status: text("status").default("confirmed"),
   paymentStatus: text("payment_status").default("unpaid"),
+  source: text("source").notNull().default("online_guest"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });

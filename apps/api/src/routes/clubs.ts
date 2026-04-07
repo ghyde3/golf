@@ -345,6 +345,28 @@ router.get("/reports", async (req, res) => {
   let totalBookings = 0;
   let totalPlayers = 0;
 
+  const rangeStart = new Date(todayUtc);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - (numDays - 1));
+  const rangeEnd = new Date(todayUtc);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+
+  const [sourceAgg] = await db
+    .select({
+      online: sql<number>`coalesce(count(*) filter (where ${bookings.source} in ('online_guest', 'online_user')), 0)::int`,
+      staff: sql<number>`coalesce(count(*) filter (where ${bookings.source} = 'staff'), 0)::int`,
+    })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(courses.clubId, clubId),
+        gte(bookings.createdAt, rangeStart),
+        lt(bookings.createdAt, rangeEnd)
+      )
+    );
+
   for (let offset = numDays - 1; offset >= 0; offset--) {
     const dayStart = new Date(todayUtc);
     dayStart.setUTCDate(dayStart.getUTCDate() - offset);
@@ -382,7 +404,14 @@ router.get("/reports", async (req, res) => {
   res.json({
     days: numDays,
     series,
-    totals: { bookings: totalBookings, players: totalPlayers },
+    totals: {
+      bookings: totalBookings,
+      players: totalPlayers,
+      sources: {
+        online: sourceAgg?.online ?? 0,
+        staff: sourceAgg?.staff ?? 0,
+      },
+    },
   });
 });
 

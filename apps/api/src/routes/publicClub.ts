@@ -33,6 +33,7 @@ import {
 } from "../lib/availabilityCache";
 import { buildFilteredAvailability } from "../lib/availabilityMerge";
 import { enqueueEmail, getEmailQueue } from "../lib/queue";
+import { getAuthPayload } from "../lib/auth";
 
 const router = Router();
 
@@ -436,6 +437,10 @@ router.post(
       return;
     }
 
+    const authPayload = getAuthPayload(req);
+    const publicUserId = authPayload?.userId ?? null;
+    const publicSource = authPayload ? "online_user" : "online_guest";
+
     try {
       const { booking, updatedSlot, clubIdForCache } = await db.transaction(
         async (tx) => {
@@ -493,6 +498,8 @@ router.post(
             .values({
               bookingRef,
               teeSlotId: slotId,
+              userId: publicUserId,
+              source: publicSource,
               guestName,
               guestEmail,
               playersCount,
@@ -720,6 +727,10 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
     datetime,
   } = body;
 
+  const authPayload = getAuthPayload(req);
+  const publicUserId = authPayload?.userId ?? null;
+  const publicSource = authPayload ? "online_user" : "online_guest";
+
   try {
     const { booking, updatedSlot, clubIdForCache } = await db.transaction(
       async (tx) => {
@@ -777,6 +788,8 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
           .values({
             bookingRef,
             teeSlotId: slotId,
+            userId: publicUserId,
+            source: publicSource,
             guestName,
             guestEmail,
             playersCount,

@@ -6,7 +6,11 @@ import Link from "next/link";
 export type ReportsPayload = {
   days: number;
   series: { date: string; bookings: number; players: number }[];
-  totals: { bookings: number; players: number };
+  totals: {
+    bookings: number;
+    players: number;
+    sources: { online: number; staff: number };
+  };
 };
 
 function formatDay(isoDate: string) {
@@ -58,6 +62,21 @@ export function ReportsClient({
             <p className="mt-2 font-display text-3xl text-ink">
               {data.totals.players}
             </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-lg border border-stone bg-cream/50 px-4 py-3 text-sm text-ink">
+            <span className="text-muted">Online bookings:</span>{" "}
+            <span className="font-semibold tabular-nums">
+              {data.totals.sources.online}
+            </span>
+          </div>
+          <div className="rounded-lg border border-stone bg-cream/50 px-4 py-3 text-sm text-ink">
+            <span className="text-muted">Staff entries:</span>{" "}
+            <span className="font-semibold tabular-nums">
+              {data.totals.sources.staff}
+            </span>
           </div>
         </div>
 

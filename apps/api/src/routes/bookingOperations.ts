@@ -93,6 +93,7 @@ router.get("/:bookingId", authenticate, async (req, res) => {
   res.json({
     id: booking.id,
     bookingRef: booking.bookingRef,
+    source: booking.source,
     guestName: booking.guestName,
     guestEmail: booking.guestEmail,
     playersCount: booking.playersCount,
@@ -530,6 +531,8 @@ router.post("/", authenticate, async (req, res) => {
         .values({
           bookingRef: ref,
           teeSlotId,
+          userId: auth.userId,
+          source: "staff",
           guestName,
           guestEmail,
           playersCount,

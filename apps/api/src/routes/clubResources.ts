@@ -14,10 +14,13 @@ import {
   teeSlots,
   users,
   userRoles,
+  clubTagDefinitions,
+  clubTagAssignments,
 } from "@teetimes/db";
 import {
   ClubConfigSchema,
   ClubProfilePatchSchema,
+  ClubTagSlugsPutSchema,
   CourseSchema,
   CoursePatchSchema,
   StaffInviteSchema,
@@ -84,6 +87,105 @@ router.patch(
     }
 
     res.json(updated);
+  }
+);
+
+router.get("/tags", async (req, res) => {
+  const clubId = clubParams(req).clubId;
+  try {
+    const catalog = await db
+      .select({
+        slug: clubTagDefinitions.slug,
+        label: clubTagDefinitions.label,
+        groupName: clubTagDefinitions.groupName,
+        sortOrder: clubTagDefinitions.sortOrder,
+      })
+      .from(clubTagDefinitions)
+      .where(eq(clubTagDefinitions.active, true))
+      .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
+
+    const assignedRows = await db
+      .select({
+        slug: clubTagDefinitions.slug,
+        label: clubTagDefinitions.label,
+      })
+      .from(clubTagAssignments)
+      .innerJoin(
+        clubTagDefinitions,
+        eq(clubTagAssignments.tagId, clubTagDefinitions.id)
+      )
+      .where(
+        and(
+          eq(clubTagAssignments.clubId, clubId),
+          eq(clubTagDefinitions.active, true)
+        )
+      )
+      .orderBy(asc(clubTagDefinitions.sortOrder));
+
+    res.json({
+      catalog: catalog.map((c) => ({
+        slug: c.slug,
+        label: c.label,
+        groupName: c.groupName,
+        sortOrder: c.sortOrder,
+      })),
+      assigned: assignedRows.map((a) => ({ slug: a.slug, label: a.label })),
+    });
+  } catch (e) {
+    console.error("Club GET tags:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put(
+  "/tags",
+  requireClubRole(["club_admin", "staff"]),
+  async (req, res) => {
+    const clubId = clubParams(req).clubId;
+    const parsed = ClubTagSlugsPutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "Invalid request", details: parsed.error.flatten() });
+      return;
+    }
+    const { tagSlugs } = parsed.data;
+    if (tagSlugs.length === 0) {
+      await db
+        .delete(clubTagAssignments)
+        .where(eq(clubTagAssignments.clubId, clubId));
+      res.json({ assigned: [] });
+      return;
+    }
+    const defs = await db
+      .select()
+      .from(clubTagDefinitions)
+      .where(
+        and(
+          eq(clubTagDefinitions.active, true),
+          inArray(clubTagDefinitions.slug, tagSlugs)
+        )
+      );
+    if (defs.length !== tagSlugs.length) {
+      res.status(400).json({ error: "Unknown or inactive tag slug" });
+      return;
+    }
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .delete(clubTagAssignments)
+          .where(eq(clubTagAssignments.clubId, clubId));
+        await tx.insert(clubTagAssignments).values(
+          defs.map((d) => ({ clubId, tagId: d.id }))
+        );
+      });
+      res.json({
+        assigned: defs.map((d) => ({ slug: d.slug, label: d.label })),
+      });
+    } catch (e) {
+      console.error("Club PUT tags:", e);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
 );
 

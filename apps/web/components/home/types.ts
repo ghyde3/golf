@@ -1,3 +1,8 @@
+export type PublicClubTag = {
+  slug: string;
+  label: string;
+};
+
 export type PublicClubListItem = {
   id: string;
   name: string;
@@ -11,4 +16,5 @@ export type PublicClubListItem = {
   coursesCount: number;
   maxHoles: number;
   createdAt: string | null;
+  tags?: PublicClubTag[];
 };

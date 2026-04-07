@@ -1,6 +1,7 @@
 "use client";
 
 import { ListingImageUrlEditor } from "@/components/club/ListingImageUrlEditor";
+import { ClubListingTagsEditor } from "@/components/club/ClubListingTagsEditor";
 import { useState } from "react";
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
 
@@ -151,6 +152,8 @@ export function SettingsClient({
             />
           </div>
         </div>
+
+        <ClubListingTagsEditor clubId={clubId} />
 
         {success && (
           <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">

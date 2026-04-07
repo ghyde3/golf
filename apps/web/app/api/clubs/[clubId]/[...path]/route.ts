@@ -60,6 +60,13 @@ export async function PATCH(
   return forward(req, "PATCH", ctx.params.clubId, ctx.params.path);
 }
 
+export async function PUT(
+  req: NextRequest,
+  ctx: { params: { clubId: string; path: string[] } }
+) {
+  return forward(req, "PUT", ctx.params.clubId, ctx.params.path);
+}
+
 export async function DELETE(
   req: NextRequest,
   ctx: { params: { clubId: string; path: string[] } }

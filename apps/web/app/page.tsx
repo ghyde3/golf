@@ -5,16 +5,6 @@ import { ClubCard } from "@/components/home/ClubCard";
 import { publicApiUrl } from "@/lib/public-api-url";
 import type { PublicClubListItem } from "@/components/home/types";
 
-const CATEGORY_CHIPS: { label: string; q: string }[] = [
-  { label: "18 holes", q: "18 holes" },
-  { label: "9 holes", q: "9 holes" },
-  { label: "Championship", q: "Championship" },
-  { label: "Links", q: "Links" },
-  { label: "Municipal", q: "Municipal" },
-  { label: "Resort", q: "Resort" },
-  { label: "Parkland", q: "Parkland" },
-];
-
 async function getJson<T>(url: string): Promise<T | null> {
   try {
     const res = await fetch(url, { cache: "no-store" });
@@ -42,12 +32,36 @@ export default async function Home() {
   const api = publicApiUrl();
   const today = new Date().toISOString().split("T")[0];
 
-  const [featuredPayload, newPayload] = await Promise.all([
+  const [featuredPayload, newPayload, tagCatalogPayload] = await Promise.all([
     getJson<{ clubs: PublicClubListItem[] }>(`${api}/api/clubs/public?limit=8`),
     getJson<{ clubs: PublicClubListItem[] }>(
       `${api}/api/clubs/public?limit=4&sort=new`
     ),
+    getJson<{
+      tags: {
+        slug: string;
+        label: string;
+        groupName: string | null;
+      }[];
+    }>(`${api}/api/clubs/public/tags`),
   ]);
+
+  const playGameChips: { label: string; href: string }[] = [
+    {
+      label: "18 holes",
+      href: `/search?q=${encodeURIComponent("18 holes")}`,
+    },
+    {
+      label: "9 holes",
+      href: `/search?q=${encodeURIComponent("9 holes")}`,
+    },
+    ...(tagCatalogPayload?.tags ?? [])
+      .filter((t) => t.groupName === "Course character")
+      .map((t) => ({
+        label: t.label,
+        href: `/search?tag=${encodeURIComponent(t.slug)}`,
+      })),
+  ];
 
   const featured = featuredPayload?.clubs ?? [];
   const newlyAdded = newPayload?.clubs ?? [];
@@ -180,10 +194,10 @@ export default async function Home() {
           Play your game
         </p>
         <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 scrollbar-none lg:mx-0 lg:flex-wrap lg:gap-2.5 lg:px-0">
-          {CATEGORY_CHIPS.map((c) => (
+          {playGameChips.map((c) => (
             <Link
-              key={c.q}
-              href={`/search?q=${encodeURIComponent(c.q)}`}
+              key={c.href}
+              href={c.href}
               className="shrink-0 rounded-full border border-ds-stone bg-white px-3.5 py-1.5 text-[12px] font-medium text-ds-ink shadow-sm transition hover:border-ds-fairway hover:text-ds-fairway"
             >
               {c.label}

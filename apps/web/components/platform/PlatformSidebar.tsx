@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   LogOut,
   Settings,
+  Tags,
 } from "lucide-react";
 import { SignOutDialog } from "@/components/SignOutDialog";
 import Link from "next/link";
@@ -91,6 +92,7 @@ export function PlatformSidebar({
   const overview: NavItem[] = [
     { href: "/platform", label: "Dashboard", icon: <LayoutDashboard /> },
     { href: "/platform/clubs", label: "Clubs", icon: <Building2 /> },
+    { href: "/platform/tags", label: "Tags", icon: <Tags /> },
   ];
 
   const system: NavItem[] = [

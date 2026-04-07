@@ -6,12 +6,21 @@ import {
   asc,
   sql,
   and,
-  or,
-  ilike,
+  exists,
+  inArray,
   type SQL,
 } from "drizzle-orm";
-import { db, clubs, clubConfig, teeSlots, bookings, bookingPlayers } from "@teetimes/db";
-import { escapeLikePattern } from "../lib/escapeLike";
+import {
+  db,
+  clubs,
+  clubConfig,
+  teeSlots,
+  bookings,
+  bookingPlayers,
+  clubTagDefinitions,
+  clubTagAssignments,
+} from "@teetimes/db";
+import { clubPublicSearchSql } from "../lib/searchQuery";
 import { PublicBookingBodySchema } from "@teetimes/validators";
 import { generateUniqueBookingRef } from "../lib/bookingRef";
 import {
@@ -52,6 +61,12 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
     const sortRaw = req.query.sort;
     const sortNew = sortRaw === "new";
 
+    const tagRaw = req.query.tag;
+    const tagSlug =
+      typeof tagRaw === "string" && tagRaw.trim().length > 0
+        ? tagRaw.trim()
+        : "";
+
     const nearLatRaw = req.query.near_lat;
     const nearLngRaw = req.query.near_lng;
     let nearLat: number | null = null;
@@ -68,16 +83,29 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
     const statusOk: SQL = sql`(${clubs.status} IS NULL OR ${clubs.status} <> 'suspended')`;
     const filters: SQL[] = [statusOk];
 
-    if (q) {
-      const pattern = `%${escapeLikePattern(q)}%`;
+    const textSearch = clubPublicSearchSql(q);
+    if (textSearch) {
+      filters.push(textSearch);
+    }
+
+    if (tagSlug) {
       filters.push(
-        or(
-          ilike(clubs.name, pattern),
-          ilike(clubs.description, pattern),
-          ilike(clubs.slug, pattern),
-          ilike(clubs.city, pattern),
-          ilike(clubs.state, pattern)
-        )!
+        exists(
+          db
+            .select({ id: clubTagAssignments.clubId })
+            .from(clubTagAssignments)
+            .innerJoin(
+              clubTagDefinitions,
+              eq(clubTagAssignments.tagId, clubTagDefinitions.id)
+            )
+            .where(
+              and(
+                eq(clubTagAssignments.clubId, clubs.id),
+                eq(clubTagDefinitions.slug, tagSlug),
+                eq(clubTagDefinitions.active, true)
+              )
+            )
+        )
       );
     }
 
@@ -90,7 +118,7 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
     });
 
     type Row = (typeof rows)[number];
-    let ordered: Row[] = [...rows];
+    const ordered: Row[] = [...rows];
     if (nearLat != null && nearLng != null) {
       ordered.sort((a, b) => {
         const da = haversineMiles(
@@ -111,6 +139,38 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
 
     const total = ordered.length;
     const page = ordered.slice(offset, offset + limit);
+
+    const pageIds = page.map((c) => c.id);
+    const tagsByClubId = new Map<
+      string,
+      { slug: string; label: string }[]
+    >();
+    if (pageIds.length > 0) {
+      const tagRows = await db
+        .select({
+          clubId: clubTagAssignments.clubId,
+          slug: clubTagDefinitions.slug,
+          label: clubTagDefinitions.label,
+          sortOrder: clubTagDefinitions.sortOrder,
+        })
+        .from(clubTagAssignments)
+        .innerJoin(
+          clubTagDefinitions,
+          eq(clubTagAssignments.tagId, clubTagDefinitions.id)
+        )
+        .where(
+          and(
+            inArray(clubTagAssignments.clubId, pageIds),
+            eq(clubTagDefinitions.active, true)
+          )
+        )
+        .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
+      for (const r of tagRows) {
+        const list = tagsByClubId.get(r.clubId) ?? [];
+        list.push({ slug: r.slug, label: r.label });
+        tagsByClubId.set(r.clubId, list);
+      }
+    }
 
     res.json({
       clubs: page.map((c) => {
@@ -133,6 +193,7 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
           coursesCount,
           maxHoles,
           createdAt: c.createdAt?.toISOString() ?? null,
+          tags: tagsByClubId.get(c.id) ?? [],
         };
       }),
       total,
@@ -141,6 +202,32 @@ router.get("/clubs/public", publicRateLimit, async (req, res) => {
     });
   } catch (error) {
     console.error("Error listing public clubs:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/clubs/public/tags", publicRateLimit, async (_req, res) => {
+  try {
+    const rows = await db
+      .select({
+        slug: clubTagDefinitions.slug,
+        label: clubTagDefinitions.label,
+        groupName: clubTagDefinitions.groupName,
+        sortOrder: clubTagDefinitions.sortOrder,
+      })
+      .from(clubTagDefinitions)
+      .where(eq(clubTagDefinitions.active, true))
+      .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
+    res.json({
+      tags: rows.map((t) => ({
+        slug: t.slug,
+        label: t.label,
+        groupName: t.groupName,
+        sortOrder: t.sortOrder,
+      })),
+    });
+  } catch (e) {
+    console.error("Public tag catalog:", e);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -175,6 +262,24 @@ router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
         return ef <= today;
       }) ?? configs[0];
 
+    const tagRows = await db
+      .select({
+        slug: clubTagDefinitions.slug,
+        label: clubTagDefinitions.label,
+      })
+      .from(clubTagAssignments)
+      .innerJoin(
+        clubTagDefinitions,
+        eq(clubTagAssignments.tagId, clubTagDefinitions.id)
+      )
+      .where(
+        and(
+          eq(clubTagAssignments.clubId, club.id),
+          eq(clubTagDefinitions.active, true)
+        )
+      )
+      .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
+
     res.json({
       id: club.id,
       name: club.name,
@@ -182,6 +287,7 @@ router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
       description: club.description,
       heroImageUrl: club.heroImageUrl,
       primaryColor: effectiveConfig?.primaryColor ?? "#16a34a",
+      tags: tagRows.map((t) => ({ slug: t.slug, label: t.label })),
       courses: club.courses.map((c) => ({
         id: c.id,
         name: c.name,

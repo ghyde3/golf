@@ -5,11 +5,14 @@ import {
   clubConfig,
   bookings,
   userRoles,
+  clubTagDefinitions,
 } from "@teetimes/db";
-import { eq, desc, sql, and, gte, lt, isNull } from "drizzle-orm";
+import { eq, desc, asc, sql, and, gte, lt, isNull } from "drizzle-orm";
 import {
   CreateClubSchema,
   PlatformClubPatchSchema,
+  ClubTagDefinitionCreateSchema,
+  ClubTagDefinitionPatchSchema,
 } from "@teetimes/validators";
 import { authenticate, requireRole } from "../middleware/auth";
 
@@ -242,6 +245,108 @@ router.get("/clubs/:clubId", async (req, res) => {
       email: r.user?.email,
     })),
   });
+});
+
+router.get("/tags", async (_req, res) => {
+  try {
+    const rows = await db
+      .select()
+      .from(clubTagDefinitions)
+      .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
+    res.json({
+      tags: rows.map((t) => ({
+        id: t.id,
+        slug: t.slug,
+        label: t.label,
+        sortOrder: t.sortOrder,
+        groupName: t.groupName,
+        active: t.active,
+        createdAt: t.createdAt?.toISOString() ?? null,
+      })),
+    });
+  } catch (e) {
+    console.error("Platform list tags:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/tags", async (req, res) => {
+  const parsed = ClubTagDefinitionCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+  const { slug, label, sortOrder, groupName, active } = parsed.data;
+  try {
+    const [row] = await db
+      .insert(clubTagDefinitions)
+      .values({
+        slug,
+        label,
+        sortOrder: sortOrder ?? 0,
+        groupName: groupName ?? null,
+        active: active ?? true,
+      })
+      .returning();
+    if (!row) {
+      res.status(500).json({ error: "Failed to create tag" });
+      return;
+    }
+    res.status(201).json({
+      id: row.id,
+      slug: row.slug,
+      label: row.label,
+      sortOrder: row.sortOrder,
+      groupName: row.groupName,
+      active: row.active,
+      createdAt: row.createdAt?.toISOString() ?? null,
+    });
+  } catch (e: unknown) {
+    const err = e as { code?: string };
+    if (err.code === "23505") {
+      res.status(409).json({ error: "A tag with this slug already exists" });
+      return;
+    }
+    console.error("Platform create tag:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/tags/:tagId", async (req, res) => {
+  const { tagId } = req.params;
+  const parsed = ClubTagDefinitionPatchSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+  const patch = parsed.data;
+  if (Object.keys(patch).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+  try {
+    const [updated] = await db
+      .update(clubTagDefinitions)
+      .set(patch)
+      .where(eq(clubTagDefinitions.id, tagId))
+      .returning();
+    if (!updated) {
+      res.status(404).json({ error: "Tag not found" });
+      return;
+    }
+    res.json({
+      id: updated.id,
+      slug: updated.slug,
+      label: updated.label,
+      sortOrder: updated.sortOrder,
+      groupName: updated.groupName,
+      active: updated.active,
+      createdAt: updated.createdAt?.toISOString() ?? null,
+    });
+  } catch (e) {
+    console.error("Platform patch tag:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

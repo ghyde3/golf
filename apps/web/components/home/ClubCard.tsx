@@ -48,6 +48,14 @@ export function ClubCard({
               {club.maxHoles} holes
             </span>
           )}
+          {(club.tags ?? []).slice(0, 2).map((t) => (
+            <span
+              key={t.slug}
+              className="rounded-full border border-ds-stone/80 bg-ds-body-bg px-2 py-0.5 text-[10px] font-medium text-ds-muted"
+            >
+              {t.label}
+            </span>
+          ))}
           <span className="rounded-full bg-ds-tag-gold-bg px-2 py-0.5 text-[10px] font-semibold tracking-wide text-ds-tag-gold-fg">
             Book now
           </span>

@@ -8,6 +8,10 @@ import { clubs, clubConfig, courses, teeSlots } from "./schema";
 import { users, userRoles } from "./schema";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import * as schema from "./schema";
+import {
+  seedClubTagAssignments,
+  seedClubTagDefinitions,
+} from "./seedTags";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client, { schema });
@@ -40,6 +44,8 @@ async function dedupeCoursesByName(clubId: string, names: readonly string[]) {
 
 async function seed() {
   console.log("Seeding database...");
+
+  await seedClubTagDefinitions(db);
 
   // Create club
   const [club] = await db
@@ -402,6 +408,8 @@ async function seed() {
   for (const [slug, heroImageUrl] of Object.entries(heroBySlug)) {
     await db.update(clubs).set({ heroImageUrl }).where(eq(clubs.slug, slug));
   }
+
+  await seedClubTagAssignments(db);
 
   console.log("Seed complete!");
   await client.end();

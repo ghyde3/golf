@@ -134,17 +134,18 @@ export function OpenSlotCell({
   datetimeIso: string;
   onBook: () => void;
 }) {
-  const droppable =
-    slot.id && slot.status === "open";
+  const canInteract =
+    slot.status === "open" && !isPast;
 
   const { setNodeRef, isOver } = useDroppable({
-    id: `drop-${courseId}-${datetimeIso}-${slot.id ?? "x"}`,
+    id: `drop-${courseId}-${datetimeIso}-${slot.id ?? "virtual"}`,
     data: {
       type: "slot" as const,
       teeSlotId: slot.id,
       courseId,
+      datetimeIso: slot.datetime,
     },
-    disabled: !droppable,
+    disabled: !canInteract,
   });
 
   return (
@@ -154,14 +155,14 @@ export function OpenSlotCell({
         "group flex min-h-[52px] items-center justify-center rounded-md border border-dashed border-stone/60 bg-cream/30 px-1 py-1 transition-colors duration-150",
         isPast && "opacity-40",
         !isPast &&
-          droppable &&
+          canInteract &&
           "hover:border-fairway hover:bg-emerald-50/90 hover:ring-2 hover:ring-fairway/25",
         isOver &&
-          droppable &&
+          canInteract &&
           "border-emerald-600 bg-emerald-50 shadow-sm ring-2 ring-fairway/40"
       )}
     >
-      {!isPast && slot.id ? (
+      {!isPast && slot.status === "open" ? (
         <button
           type="button"
           onClick={(e) => {

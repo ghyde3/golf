@@ -234,26 +234,36 @@ export function TeesheetPageClient({
           }
         | undefined;
       const drop = over.data.current as
-        | { type: string; teeSlotId: string | null; courseId: string }
+        | {
+            type: string;
+            teeSlotId: string | null;
+            courseId: string;
+            datetimeIso: string;
+          }
         | undefined;
 
       if (!drag || drag.type !== "booking" || !drop || drop.type !== "slot") {
         return;
       }
-      if (!drop.teeSlotId || !drag.sourceSlotId) {
+      if (!drag.sourceSlotId) {
         toast.error("Cannot move to this slot");
         return;
       }
-      if (drop.teeSlotId === drag.sourceSlotId) {
+      if (drop.teeSlotId && drop.teeSlotId === drag.sourceSlotId) {
         return;
       }
+
+      const body =
+        drop.teeSlotId != null && drop.teeSlotId !== ""
+          ? { teeSlotId: drop.teeSlotId }
+          : { courseId: drop.courseId, datetime: drop.datetimeIso };
 
       try {
         const res = await fetch(`/api/bookings/${drag.bookingId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ teeSlotId: drop.teeSlotId }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) {
           const err = (await res.json().catch(() => ({}))) as {

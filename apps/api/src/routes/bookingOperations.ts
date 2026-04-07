@@ -5,6 +5,7 @@ import {
   bookings,
   bookingPlayers,
   teeSlots,
+  courses,
   clubConfig,
 } from "@teetimes/db";
 import { CreateBookingSchema } from "@teetimes/validators";
@@ -124,12 +125,33 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
   }
 
   const bookingId = String(req.params.bookingId);
-  const body = req.body as { teeSlotId?: unknown };
-  if (typeof body.teeSlotId !== "string" || !body.teeSlotId.trim()) {
-    res.status(400).json({ error: "teeSlotId required" });
+  const body = req.body as {
+    teeSlotId?: unknown;
+    courseId?: unknown;
+    datetime?: unknown;
+  };
+
+  const hasTeeSlotId =
+    typeof body.teeSlotId === "string" && body.teeSlotId.trim().length > 0;
+  const hasCourseDatetime =
+    typeof body.courseId === "string" &&
+    body.courseId.trim().length > 0 &&
+    typeof body.datetime === "string" &&
+    body.datetime.trim().length > 0;
+
+  if (!hasTeeSlotId && !hasCourseDatetime) {
+    res.status(400).json({
+      error: "Provide teeSlotId or courseId and datetime",
+    });
     return;
   }
-  const newTeeSlotId = body.teeSlotId.trim();
+
+  if (hasTeeSlotId && hasCourseDatetime) {
+    res.status(400).json({
+      error: "Provide either teeSlotId or courseId+datetime, not both",
+    });
+    return;
+  }
 
   const booking = await db.query.bookings.findFirst({
     where: and(eq(bookings.id, bookingId), isNull(bookings.deletedAt)),
@@ -150,44 +172,69 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
   }
 
   const oldSlot = booking.teeSlot;
-  if (oldSlot.id === newTeeSlotId) {
-    res.json({ ok: true, bookingId, teeSlotId: newTeeSlotId });
-    return;
-  }
-
-  const newSlot = await db.query.teeSlots.findFirst({
-    where: eq(teeSlots.id, newTeeSlotId),
-    with: { course: { with: { club: true } } },
-  });
-
-  if (!newSlot?.course?.club) {
-    res.status(404).json({ error: "Target slot not found" });
-    return;
-  }
-
-  if (newSlot.course.club.id !== clubId) {
-    res.status(403).json({ error: "Cannot move booking to another club" });
-    return;
-  }
-
-  if (newSlot.status !== "open") {
-    res.status(409).json({
-      code: "SLOT_NOT_OPEN",
-      error: "Target slot is not open",
-    });
-    return;
-  }
-
   const pc = booking.playersCount;
-  const maxP = newSlot.maxPlayers ?? 4;
-  const bookedOnTarget = newSlot.bookedPlayers ?? 0;
-  if (bookedOnTarget + pc > maxP) {
-    res.status(409).json({
-      code: "SLOT_FULL",
-      error: "Target slot does not have capacity",
+  const oldSlotId = oldSlot.id;
+
+  if (hasCourseDatetime) {
+    const cid = String(body.courseId).trim();
+    const courseRow = await db.query.courses.findFirst({
+      where: eq(courses.id, cid),
     });
-    return;
+    if (!courseRow || courseRow.clubId !== clubId) {
+      res.status(404).json({ error: "Course not found" });
+      return;
+    }
+    const dt = new Date(String(body.datetime));
+    if (Number.isNaN(dt.getTime())) {
+      res.status(400).json({ error: "Invalid datetime" });
+      return;
+    }
+    const atTarget = await db.query.teeSlots.findFirst({
+      where: and(eq(teeSlots.courseId, cid), eq(teeSlots.datetime, dt)),
+    });
+    if (atTarget && atTarget.id === oldSlotId) {
+      res.json({ ok: true, bookingId, teeSlotId: atTarget.id });
+      return;
+    }
   }
+
+  if (hasTeeSlotId) {
+    const tid = String(body.teeSlotId).trim();
+    if (tid === oldSlotId) {
+      res.json({ ok: true, bookingId, teeSlotId: tid });
+      return;
+    }
+    const newSlotPre = await db.query.teeSlots.findFirst({
+      where: eq(teeSlots.id, tid),
+      with: { course: { with: { club: true } } },
+    });
+    if (!newSlotPre?.course?.club) {
+      res.status(404).json({ error: "Target slot not found" });
+      return;
+    }
+    if (newSlotPre.course.club.id !== clubId) {
+      res.status(403).json({ error: "Cannot move booking to another club" });
+      return;
+    }
+    if (newSlotPre.status !== "open") {
+      res.status(409).json({
+        code: "SLOT_NOT_OPEN",
+        error: "Target slot is not open",
+      });
+      return;
+    }
+    const maxP = newSlotPre.maxPlayers ?? 4;
+    const bookedOnTarget = newSlotPre.bookedPlayers ?? 0;
+    if (bookedOnTarget + pc > maxP) {
+      res.status(409).json({
+        code: "SLOT_FULL",
+        error: "Target slot does not have capacity",
+      });
+      return;
+    }
+  }
+
+  let finalTargetId = "";
 
   try {
     await db.transaction(async (tx) => {
@@ -197,12 +244,44 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
           bookedPlayers: sql`${teeSlots.bookedPlayers} - ${pc}`,
         })
         .where(
-          and(eq(teeSlots.id, oldSlot.id), gte(teeSlots.bookedPlayers, pc))
+          and(eq(teeSlots.id, oldSlotId), gte(teeSlots.bookedPlayers, pc))
         )
         .returning();
 
       if (!dec) {
         throw new Error("DEC_FAIL");
+      }
+
+      let targetTeeSlotId: string;
+
+      if (hasTeeSlotId) {
+        targetTeeSlotId = String(body.teeSlotId).trim();
+      } else {
+        const cid = String(body.courseId).trim();
+        const dt = new Date(String(body.datetime));
+        let target = await tx.query.teeSlots.findFirst({
+          where: and(eq(teeSlots.courseId, cid), eq(teeSlots.datetime, dt)),
+        });
+        if (!target) {
+          const [inserted] = await tx
+            .insert(teeSlots)
+            .values({
+              courseId: cid,
+              datetime: dt,
+              maxPlayers: 4,
+              bookedPlayers: 0,
+              status: "open",
+            })
+            .returning();
+          target = inserted;
+        }
+        if (target.status !== "open") {
+          throw new Error("TARGET_NOT_OPEN");
+        }
+        if ((target.bookedPlayers ?? 0) + pc > (target.maxPlayers ?? 4)) {
+          throw new Error("TARGET_FULL");
+        }
+        targetTeeSlotId = target.id;
       }
 
       const [inc] = await tx
@@ -212,7 +291,7 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
         })
         .where(
           and(
-            eq(teeSlots.id, newTeeSlotId),
+            eq(teeSlots.id, targetTeeSlotId),
             eq(teeSlots.status, "open"),
             sql`${teeSlots.bookedPlayers} + ${pc} <= ${teeSlots.maxPlayers}`
           )
@@ -225,20 +304,46 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
 
       await tx
         .update(bookings)
-        .set({ teeSlotId: newTeeSlotId })
+        .set({ teeSlotId: targetTeeSlotId })
         .where(eq(bookings.id, bookingId));
+
+      finalTargetId = targetTeeSlotId;
     });
 
+    const newSlotRow = await db.query.teeSlots.findFirst({
+      where: eq(teeSlots.id, finalTargetId),
+    });
     const oldDateStr = oldSlot.datetime.toISOString().split("T")[0];
-    const newDateStr = newSlot.datetime.toISOString().split("T")[0];
+    const newDateStr =
+      newSlotRow?.datetime.toISOString().split("T")[0] ?? oldDateStr;
     await invalidateAvailabilityCache(clubId, oldSlot.courseId, oldDateStr);
-    await invalidateAvailabilityCache(clubId, newSlot.courseId, newDateStr);
+    if (newSlotRow) {
+      await invalidateAvailabilityCache(
+        clubId,
+        newSlotRow.courseId,
+        newDateStr
+      );
+    }
 
-    res.json({ ok: true, bookingId, teeSlotId: newTeeSlotId });
+    res.json({ ok: true, bookingId, teeSlotId: finalTargetId });
   } catch (e) {
     const msg = (e as Error).message;
     if (msg === "DEC_FAIL" || msg === "INC_FAIL") {
       res.status(409).json({ error: "Could not move booking" });
+      return;
+    }
+    if (msg === "TARGET_NOT_OPEN") {
+      res.status(409).json({
+        code: "SLOT_NOT_OPEN",
+        error: "Target slot is not open",
+      });
+      return;
+    }
+    if (msg === "TARGET_FULL") {
+      res.status(409).json({
+        code: "SLOT_FULL",
+        error: "Target slot does not have capacity",
+      });
       return;
     }
     console.error(e);

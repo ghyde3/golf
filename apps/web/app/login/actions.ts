@@ -15,6 +15,13 @@ type LoginPrecheck =
   | { ok: true; roles: UserRole[] }
   | { ok: false; reason: "auth" | "unavailable" };
 
+function safeRedirectPath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim();
+  if (!t.startsWith("/") || t.startsWith("//")) return null;
+  return t;
+}
+
 /**
  * Same source as `authorize` in auth.ts. We need roles here because `auth()`
  * does not see the new session cookie in the same server-action request as
@@ -44,6 +51,7 @@ async function fetchRolesForRedirect(
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const nextPath = safeRedirectPath(formData.get("redirect"));
 
   const precheck = await fetchRolesForRedirect(email, password);
   if (!precheck.ok) {
@@ -72,5 +80,5 @@ export async function loginAction(formData: FormData) {
     redirect("/login?error=auth");
   }
 
-  redirect(getDefaultLoginRedirect(roles));
+  redirect(nextPath ?? getDefaultLoginRedirect(roles));
 }

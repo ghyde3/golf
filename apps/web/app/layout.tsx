@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DM_Mono, DM_Sans, Playfair_Display } from "next/font/google";
 import { Toaster } from "sonner";
@@ -38,10 +39,12 @@ export default function RootLayout({
       className={`${dmSans.variable} ${playfair.variable} ${dmMono.variable}`}
     >
       <body className="font-sans">
-        <TooltipProvider delayDuration={300}>
-          {children}
-          <Toaster richColors position="top-center" />
-        </TooltipProvider>
+        <AuthSessionProvider>
+          <TooltipProvider delayDuration={300}>
+            {children}
+            <Toaster richColors position="top-center" />
+          </TooltipProvider>
+        </AuthSessionProvider>
       </body>
     </html>
   );

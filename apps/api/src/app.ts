@@ -8,6 +8,7 @@ import clubResources from "./routes/clubResources";
 import resourceRoutes from "./routes/resources";
 import publicClubRoutes from "./routes/publicClub";
 import bookingOperations from "./routes/bookingOperations";
+import meRoutes from "./routes/me";
 import { authenticate, requireClubAccess } from "./middleware/auth";
 
 const app = express();
@@ -22,6 +23,7 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 app.use("/api/platform", platformRoutes);
+app.use("/api/me", meRoutes);
 // Public routes must run before `/api/clubs/:clubId` or paths like
 // `/api/clubs/public/:slug` are captured as clubId "public" and hit auth (401).
 app.use("/api", publicClubRoutes);

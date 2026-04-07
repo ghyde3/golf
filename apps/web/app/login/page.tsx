@@ -7,9 +7,10 @@ import { loginAction } from "./actions";
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string };
+  searchParams: { error?: string; redirect?: string };
 }) {
   const err = searchParams.error;
+  const redirectTo = searchParams.redirect ?? "";
 
   return (
     <AuthShell>
@@ -49,6 +50,9 @@ export default function LoginPage({
           className="mt-8 space-y-4 rounded-xl border border-stone bg-white p-6 shadow-sm"
           action={loginAction}
         >
+          {redirectTo ? (
+            <input type="hidden" name="redirect" value={redirectTo} />
+          ) : null}
           <div>
             <label
               htmlFor="email"

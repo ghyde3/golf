@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -16,6 +17,7 @@ interface ClubProfile {
 
 function SuccessContent({ params }: { params: { slug: string } }) {
   const searchParams = useSearchParams();
+  const { data: session, status: sessionStatus } = useSession();
   const [club, setClub] = useState<ClubProfile | null>(null);
 
   const bookingRef = searchParams.get("bookingRef") || "";
@@ -128,6 +130,15 @@ function SuccessContent({ params }: { params: { slug: string } }) {
       >
         <span className="relative z-[1]">Book another tee time</span>
       </Link>
+
+      {sessionStatus === "authenticated" && session && (
+        <Link
+          href="/my-bookings"
+          className="mt-4 block w-full max-w-md text-center text-[15px] font-semibold text-ds-fairway underline-offset-4 hover:underline"
+        >
+          View my bookings →
+        </Link>
+      )}
     </div>
   );
 }

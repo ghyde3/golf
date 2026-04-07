@@ -1,4 +1,5 @@
 import { Router } from "express";
+import Stripe from "stripe";
 import { publicRateLimit, bookingRateLimit } from "../middleware/rateLimit";
 import {
   eq,
@@ -14,6 +15,7 @@ import {
   db,
   clubs,
   clubConfig,
+  courses,
   teeSlots,
   bookings,
   bookingPlayers,
@@ -33,6 +35,29 @@ import { buildFilteredAvailability } from "../lib/availabilityMerge";
 import { enqueueEmail, getEmailQueue } from "../lib/queue";
 
 const router = Router();
+
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY not set");
+  return Stripe(key, { apiVersion: "2026-03-25.dahlia" });
+}
+
+async function resolveClubForPublicBooking(body: {
+  clubSlug?: string;
+  courseId?: string;
+}) {
+  if (body.clubSlug) {
+    return db.query.clubs.findFirst({ where: eq(clubs.slug, body.clubSlug) });
+  }
+  if (body.courseId) {
+    const course = await db.query.courses.findFirst({
+      where: eq(courses.id, body.courseId),
+      with: { club: true },
+    });
+    return course?.club ?? null;
+  }
+  return null;
+}
 
 function haversineMiles(
   lat1: number,
@@ -286,6 +311,7 @@ router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
       slug: club.slug,
       description: club.description,
       heroImageUrl: club.heroImageUrl,
+      bookingFee: club.bookingFee != null ? String(club.bookingFee) : null,
       primaryColor: effectiveConfig?.primaryColor ?? "#16a34a",
       tags: tagRows.map((t) => ({ slug: t.slug, label: t.label })),
       courses: club.courses.map((c) => ({
@@ -370,6 +396,307 @@ router.get("/clubs/:clubId/availability", publicRateLimit, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+router.post(
+  "/bookings/public/payment-intent",
+  bookingRateLimit,
+  async (req, res) => {
+    const parsed = PublicBookingBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: "Invalid request", details: parsed.error.flatten() });
+      return;
+    }
+
+    const body = parsed.data;
+    const {
+      playersCount,
+      guestName,
+      guestEmail,
+      notes,
+      players,
+      clubSlug,
+      teeSlotId: bodyTeeSlotId,
+      courseId,
+      datetime,
+    } = body;
+
+    const clubRow = await resolveClubForPublicBooking(body);
+    if (!clubRow) {
+      res.status(400).json({ error: "Unable to resolve club" });
+      return;
+    }
+
+    const bookingFee = parseFloat(String(clubRow.bookingFee ?? "0"));
+    const amountCents = Math.round(bookingFee * playersCount * 100);
+
+    if (amountCents === 0) {
+      res.json({ requiresPayment: false });
+      return;
+    }
+
+    try {
+      const { booking, updatedSlot, clubIdForCache } = await db.transaction(
+        async (tx) => {
+          let slotId = bodyTeeSlotId;
+
+          if (!slotId && courseId && datetime) {
+            const [newSlot] = await tx
+              .insert(teeSlots)
+              .values({
+                courseId,
+                datetime: new Date(datetime),
+                maxPlayers: 4,
+                bookedPlayers: 0,
+                status: "open",
+              })
+              .returning();
+            slotId = newSlot.id;
+          }
+
+          if (!slotId) {
+            throw new Error("MISSING_SLOT");
+          }
+
+          const [updatedSlot] = await tx
+            .update(teeSlots)
+            .set({
+              bookedPlayers: sql`${teeSlots.bookedPlayers} + ${playersCount}`,
+            })
+            .where(
+              and(
+                eq(teeSlots.id, slotId),
+                sql`${teeSlots.bookedPlayers} + ${playersCount} <= ${teeSlots.maxPlayers}`,
+                eq(teeSlots.status, "open")
+              )
+            )
+            .returning();
+
+          if (!updatedSlot) {
+            throw new Error("SLOT_FULL");
+          }
+
+          const slotWithCourse = await tx.query.teeSlots.findFirst({
+            where: eq(teeSlots.id, slotId),
+            with: { course: { with: { club: true } } },
+          });
+
+          const slug =
+            slotWithCourse?.course?.club?.slug ?? clubSlug ?? "club";
+          const clubIdForCache = slotWithCourse?.course?.club?.id ?? "";
+
+          const bookingRef = await generateUniqueBookingRef(slug, tx);
+
+          const [booking] = await tx
+            .insert(bookings)
+            .values({
+              bookingRef,
+              teeSlotId: slotId,
+              guestName,
+              guestEmail,
+              playersCount,
+              notes: notes ?? null,
+              status: "confirmed",
+              paymentStatus: "pending_payment",
+            })
+            .returning();
+
+          if (players && Array.isArray(players)) {
+            for (const p of players) {
+              await tx.insert(bookingPlayers).values({
+                bookingId: booking.id,
+                name: p.name,
+                email: p.email ?? null,
+              });
+            }
+          }
+
+          return { booking, updatedSlot, clubIdForCache };
+        }
+      );
+
+      const dateStr = updatedSlot.datetime.toISOString().split("T")[0];
+      if (clubIdForCache) {
+        await invalidateAvailabilityCache(
+          clubIdForCache,
+          updatedSlot.courseId,
+          dateStr
+        );
+      }
+
+      try {
+        const stripe = getStripe();
+        const intent = await stripe.paymentIntents.create({
+          amount: amountCents,
+          currency: "usd",
+          metadata: {
+            bookingId: booking.id,
+            bookingRef: booking.bookingRef,
+          },
+          description: `Tee time booking ${booking.bookingRef}`,
+        });
+
+        res.json({
+          requiresPayment: true,
+          clientSecret: intent.client_secret,
+          bookingId: booking.id,
+          bookingRef: booking.bookingRef,
+          amountCents,
+          datetime: updatedSlot.datetime.toISOString(),
+        });
+      } catch (stripeErr) {
+        console.error("Stripe payment intent error:", stripeErr);
+        await db.transaction(async (tx) => {
+          await tx
+            .update(bookings)
+            .set({
+              status: "cancelled",
+              paymentStatus: "failed",
+              deletedAt: new Date(),
+            })
+            .where(eq(bookings.id, booking.id));
+          await tx
+            .update(teeSlots)
+            .set({
+              bookedPlayers: sql`${teeSlots.bookedPlayers} - ${playersCount}`,
+            })
+            .where(eq(teeSlots.id, booking.teeSlotId!));
+        });
+        if (clubIdForCache) {
+          await invalidateAvailabilityCache(
+            clubIdForCache,
+            updatedSlot.courseId,
+            dateStr
+          );
+        }
+        res.status(500).json({ error: "Payment setup failed" });
+      }
+    } catch (error) {
+      const msg = (error as Error).message;
+      if (msg === "SLOT_FULL") {
+        res.status(409).json({ code: "SLOT_FULL", error: "That slot is full" });
+        return;
+      }
+      if (msg === "MISSING_SLOT") {
+        res
+          .status(400)
+          .json({ error: "teeSlotId or (courseId + datetime) required" });
+        return;
+      }
+      console.error("Error creating payment intent booking:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+
+router.post(
+  "/bookings/public/confirm-payment",
+  bookingRateLimit,
+  async (req, res) => {
+    const { bookingId, paymentIntentId } = req.body as {
+      bookingId?: string;
+      paymentIntentId?: string;
+    };
+    if (!bookingId || !paymentIntentId) {
+      res.status(400).json({ error: "bookingId and paymentIntentId required" });
+      return;
+    }
+
+    try {
+      const stripe = getStripe();
+      const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+      if (intent.metadata.bookingId !== bookingId) {
+        res.status(403).json({ error: "Payment intent does not match booking" });
+        return;
+      }
+
+      const booking = await db.query.bookings.findFirst({
+        where: eq(bookings.id, bookingId),
+        with: { teeSlot: true },
+      });
+
+      if (!booking) {
+        res.status(404).json({ error: "Booking not found" });
+        return;
+      }
+
+      if (intent.status === "succeeded") {
+        await db
+          .update(bookings)
+          .set({ paymentStatus: "paid" })
+          .where(eq(bookings.id, bookingId));
+
+        await enqueueEmail("email:booking-confirmation", { bookingId });
+
+        if (booking.teeSlot) {
+          const teeTime = booking.teeSlot.datetime.getTime();
+          const reminderAt = teeTime - 24 * 60 * 60 * 1000 - Date.now();
+          if (reminderAt > 60 * 60 * 1000) {
+            const q = getEmailQueue();
+            if (q) {
+              await q.add(
+                "email:booking-reminder",
+                { bookingId },
+                {
+                  delay: reminderAt,
+                  attempts: 3,
+                  backoff: { type: "exponential", delay: 2000 },
+                  removeOnComplete: true,
+                }
+              );
+            }
+          }
+        }
+
+        res.json({
+          bookingRef: booking.bookingRef,
+          datetime: booking.teeSlot?.datetime?.toISOString(),
+          paymentStatus: "paid",
+        });
+      } else {
+        await db.transaction(async (tx) => {
+          await tx
+            .update(bookings)
+            .set({ paymentStatus: "failed", deletedAt: new Date() })
+            .where(eq(bookings.id, bookingId));
+
+          if (booking.teeSlotId) {
+            await tx
+              .update(teeSlots)
+              .set({
+                bookedPlayers: sql`${teeSlots.bookedPlayers} - ${booking.playersCount}`,
+              })
+              .where(eq(teeSlots.id, booking.teeSlotId));
+          }
+        });
+
+        if (booking.teeSlot) {
+          const dateStr = booking.teeSlot.datetime.toISOString().split("T")[0];
+          const courseRow = await db.query.courses.findFirst({
+            where: eq(courses.id, booking.teeSlot.courseId),
+          });
+          if (courseRow) {
+            await invalidateAvailabilityCache(
+              courseRow.clubId,
+              courseRow.id,
+              dateStr
+            );
+          }
+        }
+
+        res.status(402).json({
+          error: "Payment not completed",
+          status: intent.status,
+        });
+      }
+    } catch (error) {
+      console.error("confirm-payment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
 
 router.post("/bookings/public", bookingRateLimit, async (req, res) => {
   const parsed = PublicBookingBodySchema.safeParse(req.body);

@@ -1,6 +1,12 @@
 import express, { Router } from "express";
-import { db, invoices, platformSettings } from "@teetimes/db";
-import { eq } from "drizzle-orm";
+import {
+  db,
+  invoices,
+  platformSettings,
+  bookings,
+  teeSlots,
+} from "@teetimes/db";
+import { eq, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -19,7 +25,16 @@ router.post(
       return;
     }
 
-    let event: { type: string; data: { object: { id: string; status?: string } } };
+    let event: {
+      type: string;
+      data: {
+        object: {
+          id: string;
+          status?: string;
+          metadata?: Record<string, string>;
+        };
+      };
+    };
     try {
       event = JSON.parse(req.body.toString());
     } catch {
@@ -39,6 +54,30 @@ router.post(
         .update(invoices)
         .set({ status: "sent", updatedAt: new Date() })
         .where(eq(invoices.stripeInvoiceId, stripeInvoiceId));
+    } else if (event.type === "payment_intent.payment_failed") {
+      const piObject = event.data.object;
+      const bookingId = piObject.metadata?.bookingId;
+      if (bookingId) {
+        const booking = await db.query.bookings.findFirst({
+          where: eq(bookings.id, bookingId),
+        });
+        if (booking && booking.paymentStatus === "pending_payment") {
+          await db.transaction(async (tx) => {
+            await tx
+              .update(bookings)
+              .set({ paymentStatus: "failed", deletedAt: new Date() })
+              .where(eq(bookings.id, bookingId));
+            if (booking.teeSlotId) {
+              await tx
+                .update(teeSlots)
+                .set({
+                  bookedPlayers: sql`${teeSlots.bookedPlayers} - ${booking.playersCount}`,
+                })
+                .where(eq(teeSlots.id, booking.teeSlotId));
+            }
+          });
+        }
+      }
     }
 
     res.json({ received: true });

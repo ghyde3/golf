@@ -23,6 +23,7 @@ function SuccessContent({ params }: { params: { slug: string } }) {
   const players = searchParams.get("players") || "1";
   const guestName = searchParams.get("guestName") || "";
   const guestEmail = searchParams.get("guestEmail") || "";
+  const amountPaid = searchParams.get("amountPaid") || "";
 
   useEffect(() => {
     fetch(`${API_URL}/api/clubs/public/${params.slug}`)
@@ -112,6 +113,12 @@ function SuccessContent({ params }: { params: { slug: string } }) {
             <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Booking reference</p>
             <p className="font-mono text-xl font-bold tracking-wider text-ds-fairway">{bookingRef}</p>
           </div>
+          {amountPaid && (
+            <div className="border-t border-ds-stone pt-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-ds-muted">Amount charged</p>
+              <p className="text-sm font-semibold text-ds-fairway">${parseFloat(amountPaid).toFixed(2)}</p>
+            </div>
+          )}
         </div>
       </div>
 

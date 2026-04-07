@@ -3,3 +3,7 @@ export * from "./clubs";
 export * from "./clubTags";
 export * from "./bookings";
 export * from "./observability";
+export * from "./platform-settings";
+export * from "./invoices";
+export * from "./audit-log";
+export * from "./announcements";

@@ -9,11 +9,14 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import {
   Building2,
+  ClipboardList,
   CreditCard,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   Settings,
   Tags,
+  Users as UsersIcon,
 } from "lucide-react";
 import { SignOutDialog } from "@/components/SignOutDialog";
 import Link from "next/link";
@@ -98,6 +101,9 @@ export function PlatformSidebar({
   const system: NavItem[] = [
     { href: "/platform/billing", label: "Billing", icon: <CreditCard /> },
     { href: "/platform/settings", label: "Settings", icon: <Settings /> },
+    { href: "/platform/users", label: "Users", icon: <UsersIcon /> },
+    { href: "/platform/audit-log", label: "Audit Log", icon: <ClipboardList /> },
+    { href: "/platform/announcements", label: "Announcements", icon: <Megaphone /> },
   ];
 
   const isActive = (href: string) => {

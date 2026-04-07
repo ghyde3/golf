@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import authRoutes from "./routes/auth";
 import platformRoutes from "./routes/platform";
+import stripeRoutes from "./routes/stripe";
 import clubManageRoutes from "./routes/clubs";
 import clubResources from "./routes/clubResources";
 import publicClubRoutes from "./routes/publicClub";
@@ -10,6 +11,7 @@ import bookingOperations from "./routes/bookingOperations";
 const app = express();
 
 app.use(cors());
+app.use("/api/stripe", stripeRoutes);
 app.use(express.json());
 
 app.get("/health", (_req, res) => {

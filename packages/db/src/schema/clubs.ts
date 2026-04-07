@@ -9,25 +9,12 @@ import {
   time,
   jsonb,
   unique,
-  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+import { clubs } from "./clubs-base";
+import { invoices } from "./invoices";
 
-export const clubs = pgTable("clubs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug").unique().notNull(),
-  status: text("status").default("active"),
-  subscriptionType: text("subscription_type").default("trial"),
-  bookingFee: numeric("booking_fee", { precision: 5, scale: 2 }).default("0"),
-  description: text("description"),
-  heroImageUrl: text("hero_image_url"),
-  city: text("city"),
-  state: text("state"),
-  latitude: doublePrecision("latitude"),
-  longitude: doublePrecision("longitude"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-});
+export { clubs } from "./clubs-base";
 
 export const clubConfig = pgTable(
   "club_config",
@@ -62,6 +49,7 @@ export const courses = pgTable("courses", {
 export const clubsRelations = relations(clubs, ({ many }) => ({
   configs: many(clubConfig),
   courses: many(courses),
+  invoices: many(invoices),
 }));
 
 export const clubConfigRelations = relations(clubConfig, ({ one }) => ({

@@ -22,6 +22,13 @@
       "when": 1775524193214,
       "tag": "0002_slim_cloak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775527297333,
+      "tag": "0003_broad_hawkeye",
+      "breakpoints": true
     }
   ]
 }

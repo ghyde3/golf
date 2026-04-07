@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home/HomeSearchBar";
 import { ClubCard } from "@/components/home/ClubCard";
@@ -133,28 +134,23 @@ export default async function Home() {
       </header>
 
       <section className="relative h-[340px] shrink-0 overflow-hidden bg-ds-forest lg:h-[min(580px,85vh)]">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_60%_40%,rgba(74,140,92,0.4)_0%,transparent_70%),linear-gradient(180deg,rgba(26,58,42,0.3)_0%,rgba(26,58,42,0.95)_85%)] lg:bg-[linear-gradient(90deg,rgba(26,58,42,0.85)_0%,rgba(26,58,42,0.3)_60%,transparent_100%)]" />
-        <div
-          className="absolute inset-0 hidden opacity-40 lg:block"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(74,140,92,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(74,140,92,0.1) 1px, transparent 1px)",
-            backgroundSize: "60px 60px",
-            transform: "perspective(500px) rotateX(18deg)",
-            transformOrigin: "bottom center",
-          }}
+        <Image
+          src="/home-hero.png"
+          alt=""
+          fill
+          priority
+          className="object-cover object-[center_35%] lg:object-[center_30%]"
+          sizes="100vw"
         />
-        <div className="absolute inset-0 lg:hidden">
-          <div className="absolute -left-[100px] -top-[100px] h-[600px] w-[600px] rounded-full border border-ds-grass/20" />
-          <div className="absolute left-[50px] top-[50px] h-[400px] w-[400px] rounded-full border border-ds-grass/20" />
-          <div className="absolute left-[150px] top-[150px] h-[200px] w-[200px] rounded-full border border-ds-grass/20" />
-          <div className="absolute -bottom-[50px] -right-[200px] h-[300px] w-[800px] rounded-full border border-ds-gold/15" />
-        </div>
-        <div className="absolute inset-0 hidden lg:block">
-          <div className="absolute -right-[100px] -top-[200px] h-[700px] w-[700px] rounded-full bg-[radial-gradient(circle,rgba(74,140,92,0.25)_0%,transparent_70%)]" />
-          <div className="absolute bottom-[-100px] left-[200px] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle,rgba(45,90,61,0.4)_0%,transparent_70%)]" />
-          <div className="absolute left-[100px] top-[100px] h-[200px] w-[200px] rounded-full bg-[radial-gradient(circle,rgba(201,168,76,0.15)_0%,transparent_70%)]" />
-        </div>
+        {/* Readability: darken left (headline) and bottom edge */}
+        <div
+          className="absolute inset-0 bg-gradient-to-r from-ds-forest/95 via-ds-forest/55 to-ds-forest/20 lg:from-ds-forest/92 lg:via-ds-forest/45 lg:to-ds-forest/10"
+          aria-hidden
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-ds-forest/85 via-transparent to-ds-forest/30"
+          aria-hidden
+        />
 
         <div className="absolute inset-x-0 bottom-0 z-[1] px-6 pb-6 pt-8 lg:mx-auto lg:flex lg:max-w-[1320px] lg:items-end lg:px-12 lg:pb-[72px]">
           <div className="max-w-[680px]">

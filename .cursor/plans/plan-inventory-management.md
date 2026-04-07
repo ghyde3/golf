@@ -6,7 +6,7 @@
 
 ## Design Principles
 
-1. **Usage model is the primary discriminator.** How a resource behaves (rented and returned, consumed and gone, or service-based) determines all downstream logic. Tracking mode (pool vs individual) is secondary and only applies to rentals and services.
+1. **Usage model is the primary discriminator.** How a resource behaves (rented and returned, consumed and gone, or service-based) determines all downstream logic. **Tracking mode** (`pool` vs `individual`) applies only to **`usageModel = "rental"`**. Consumables and the `service` placeholder use `trackingMode = null` (no capacity model for services until a future scheduling plan).
 2. **Bookings reserve quantity, not specific items.** A booking creates a capacity reservation against a resource type. Which specific unit fulfils that reservation is a separate, later concern — handled by `assignmentStrategy`. Availability is always computed from total usable units minus overlapping reservations. Assigned items are never the source of truth for capacity.
 3. **Assignment is a first-class, configurable concept.** `assignmentStrategy` on `resourceTypes` determines when and how specific units are matched to reservations: automatically at booking time (`"auto"`), deferred to staff at check-in (`"manual"`), or not applicable (`"none"`). This is per-type, not per-booking.
 4. **Rental windows are per-slot-type, not a single number.** A 9-hole round and an 18-hole round don't return a unit at the same time. Clubs configure the expected window per format (9-hole, 18-hole, 27-hole, 36-hole) plus a turnaround buffer.
@@ -49,17 +49,20 @@ The category-level table. One row per type of asset per club.
 | `clubId` | uuid FK → clubs | |
 | `name` | text | "Golf Carts", "Towels", "Caddies" |
 | `usageModel` | text | `"rental"` \| `"consumable"` \| `"service"` |
-| `trackingMode` | text nullable | `"pool"` \| `"individual"` — see constraint table below |
+| `trackingMode` | text nullable | `"pool"` \| `"individual"` — required for `usageModel = "rental"` only; must be `null` for `consumable` and `service` |
 | `assignmentStrategy` | text | `"auto"` \| `"manual"` \| `"none"` — see constraint table below |
-| `totalUnits` | int nullable | Pool mode: hard capacity ceiling. Individual mode: derived from item count at query time. |
+| `totalUnits` | int nullable | Pool mode: hard capacity ceiling. Individual mode: leave `null` in DB; **API `totalUnits`** = fleet size for display: `COUNT(resourceItems)` where `operationalStatus != 'retired'` (includes `available` + `maintenance`). **Capacity `usableUnits`** still excludes maintenance: `COUNT` where `operationalStatus = 'available'` only. |
 | `trackInventory` | bool default true | Consumable only. `false` = unlimited, no stock check ever performed. |
 | `currentStock` | int nullable | Consumable + `trackInventory=true`: current on-hand count. |
 | `rentalWindows` | jsonb nullable | Rental only. Maps slotType → minutes (excluding buffer). See format below. |
 | `turnaroundBufferMinutes` | int default 0 | Added to rental window end. Prevents back-to-back allocation without cleaning time. |
 | `notes` | text nullable | Internal staff notes |
 | `sortOrder` | int default 0 | |
-| `active` | bool default true | Inactive types are hidden from the add-on catalog |
+| `active` | bool default true | When `false`, type is hidden from the **public** add-on catalog (Plan 2). Staff `GET /resources` still returns inactive types with `active: false` so clubs can review and reactivate. |
+| `deletedAt` | timestamptz nullable | Soft-delete timestamp. When set, type is removed from staff lists except where explicitly queried for audit; **not** the same as `active = false`. |
 | `createdAt` | timestamptz defaultNow | |
+
+**`active` vs `deletedAt`:** Use **`active`** for "we are not selling this add-on right now" (reversible from staff UI). Use **`deletedAt`** only when retiring a type record (e.g., after migrating data). **`DELETE /resources/:typeId`** sets `deletedAt` (and requires no active items/reservations as today), not merely `active = false`.
 
 ---
 
@@ -79,7 +82,7 @@ The category-level table. One row per type of asset per club.
 |---|---|
 | `"pool"` | Tracked as an aggregate count only. No individual unit records. |
 | `"individual"` | Each unit has its own `resourceItems` row with `operationalStatus` and audit history. |
-| `null` | Consumables never have a tracking mode. |
+| `null` | Consumables and service types — no pool/individual distinction until a future scheduling plan defines one. |
 
 ---
 
@@ -90,8 +93,8 @@ The category-level table. One row per type of asset per club.
 | Condition | Required `assignmentStrategy` | Reason |
 |---|---|---|
 | `trackingMode = "pool"` | must be `"none"` | Pool types have no individual items to assign |
-| `usageModel = "consumable"` | must be `"none"` | Consumables are consumed, not assigned |
-| `usageModel = "service"` | must be `"none"` | No assignment logic until scheduling engine exists |
+| `usageModel = "consumable"` | must be `"none"`; `trackingMode` must be `null` | Consumables are consumed, not assigned |
+| `usageModel = "service"` | must be `"none"`; `trackingMode` must be `null` | No assignment logic until scheduling engine exists |
 | `trackingMode = "individual"` | must be `"auto"` or `"manual"` | Individual items require an explicit assignment strategy |
 
 These constraints are enforced in:
@@ -182,12 +185,15 @@ The table that records which specific `resourceItem` fulfils a given reservation
 | `resourceItemId` | uuid FK → resourceItems | The specific unit assigned |
 | `assignedAt` | timestamptz defaultNow | |
 | `assignedBy` | uuid FK → users nullable | `null` = system-assigned (auto strategy); user id = staff-assigned (manual strategy) |
+| `supersededAt` | timestamptz nullable | Non-null when this assignment has been replaced by a later row. Active assignments have `supersededAt IS NULL`. |
 
 **One row per unit per line.** If `bookingAddonLines.quantity = 3` and `assignmentStrategy = "auto"`, three rows are inserted — one per unit selected. If `assignmentStrategy = "manual"`, rows are inserted later by staff as they assign each unit.
 
 **Relationship to `bookingAddonLines`:** `bookingAddonLines` never stores a `resourceItemId` directly. All item assignments live in this table. `bookingAddonLines` carries the reservation (quantity, window, pricing); `booking_resource_assignments` carries the fulfilment (which specific unit).
 
-**Reassignment:** To reassign a unit, delete the existing row and insert a new one with the replacement `resourceItemId`. The old assignment is gone; the new one is recorded with the staff member's `assignedBy`. If a full audit trail of reassignments is needed in a future iteration, this table can gain a `supersededAt` column and reassignments can be soft-replaced rather than deleted.
+**Active assignment queries always include `WHERE supersededAt IS NULL`.** This applies to availability overlap checks, the BookingDrawer display, and the assignment list endpoint.
+
+**Reassignment:** Insert a new row with the replacement `resourceItemId` and `assignedBy`, then set `supersededAt = now()` on the previous row (order within the same transaction can be insert-then-update or update-then-insert as long as the transaction commits atomically). **History:** all rows for the line, ordered by `assignedAt`, give the reassignment timeline; a linked `supersededById` column is intentionally omitted to keep the schema simple. Hard-deleting assignment rows is never done.
 
 ---
 
@@ -226,9 +232,67 @@ When a row is inserted, `resourceTypes.currentStock` is incremented by `deltaQua
 
 ---
 
+### `pool_maintenance_holds`
+
+Tracks units in a pool-mode resource type that are temporarily out of service. Because pool types have no individual `resourceItems` rows, maintenance is tracked here as a quantity hold rather than per-unit status.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `resourceTypeId` | uuid FK → resourceTypes CASCADE | Must be a pool-mode (`trackingMode = "pool"`) type |
+| `clubId` | uuid | Denormalized for query efficiency |
+| `units` | int | Number of units in this hold (must be ≥ 1) |
+| `reason` | text nullable | "Cart #14 transmission failure", "3 carts in winter storage" |
+| `startedAt` | timestamptz defaultNow | When the hold was created |
+| `resolvedAt` | timestamptz nullable | `null` = currently in maintenance; non-null = resolved/returned to service |
+| `createdBy` | uuid FK → users | |
+| `resolvedBy` | uuid FK → users nullable | Set when `resolvedAt` is populated |
+
+**Pool availability formula with holds:**
+
+```
+usableUnits = totalUnits - SUM(units FROM pool_maintenance_holds
+                                WHERE resourceTypeId = :typeId
+                                  AND resolvedAt IS NULL)
+```
+
+This replaces the previous pool formula of `usableUnits = totalUnits`. A `totalUnits` update is no longer needed when units go in or out of service — staff create or resolve holds instead.
+
+**Holds are never deleted.** Set `resolvedAt` and `resolvedBy` to close a hold. The full history of when units were taken out of service and returned is preserved.
+
+---
+
+### Indexes (this plan’s tables)
+
+Add in the same migration as the tables (or a follow-up migration immediately after). Tune if query plans show seq scans at scale.
+
+| Table | Index | Purpose |
+|---|---|---|
+| `resource_items` | `(resource_type_id, operational_status)` | Usable-unit counts and item lists by status |
+| `resource_items` | `(club_id)` if not already implied by FK usage | Club-scoped listings |
+| `pool_maintenance_holds` | `(resource_type_id) WHERE resolved_at IS NULL` partial index optional, or `(resource_type_id, resolved_at)` | Active hold sums |
+| `booking_resource_assignments` | `(booking_addon_line_id, superseded_at)` | Active assignments per line |
+| `booking_resource_assignments` | `(resource_item_id)` | Lookups by item (overlap with assignments) |
+| `resource_item_status_log` | `(resource_item_id, changed_at DESC)` | Item audit history |
+| `resource_restock_log` | `(resource_type_id, created_at DESC)` | Restock history |
+
+**Plan 2 / Feature D:** composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` remains as documented for overlap queries.
+
+---
+
 ### `slotType` extension
 
 Update `packages/db/src/schema/bookings.ts` to add `"27hole"` and `"36hole"` as valid values for `tee_slots.slotType`. Also update `slotGenerator.ts` and any TypeScript types referencing `slotType`.
+
+---
+
+## Resource type lifecycle and mutability
+
+**Immutability (recommended default):** After insert, **`usageModel`** and **`trackingMode`** are **immutable**. Changing either would orphan `resourceItems`, invalidate `bookingAddonLines` windows, or contradict existing reservations. `PATCH` rejects attempts to change these fields.
+
+**If product later requires migration:** introduce an explicit admin-only "duplicate type + move reservations" flow in a separate plan — not silent in-place edits.
+
+**Safe `PATCH` fields:** `name`, `notes`, `sortOrder`, `active`, `rentalWindows`, `turnaroundBufferMinutes`, `totalUnits` (pool only), `trackInventory` / `currentStock` (consumable), `assignmentStrategy` **only when** current `trackingMode = "individual"` (toggle `auto` ↔ `manual` for **future** bookings; existing lines unchanged).
 
 ---
 
@@ -267,7 +331,7 @@ usableUnits = totalUnits
               - COUNT(items WHERE operationalStatus = 'maintenance')
               - COUNT(items WHERE operationalStatus = 'retired')
 
-overlappingReservations = SUM(quantity) FROM bookingAddonLines
+overlappingReservations = SUM(quantity × unitsConsumedPerLine) FROM bookingAddonLines
                           WHERE resource_type_id = :typeId
                             AND booking_start < :newEnd
                             AND booking_end > :newStart
@@ -277,9 +341,11 @@ overlappingReservations = SUM(quantity) FROM bookingAddonLines
 available = usableUnits - overlappingReservations
 ```
 
-For **pool mode**: `usableUnits = totalUnits` (no items to query; maintenance is tracked separately via the restock log or a manual capacity update).
+`unitsConsumedPerLine` comes from the add-on catalog line (Plan 2, Feature D). **Until that ships, treat `unitsConsumed` as `1` for every line** so Plan 1 APIs and tests stay consistent.
 
-For **individual mode**: `usableUnits` is computed from the `resourceItems` table as shown above.
+For **pool mode**: `usableUnits = totalUnits - SUM(units FROM pool_maintenance_holds WHERE resourceTypeId = :typeId AND resolvedAt IS NULL)`. No items to query; maintenance is tracked via `pool_maintenance_holds`.
+
+For **individual mode**: `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available')` — equivalent to the three-line formula above when `totalUnits` means “all item rows for the type.” Do **not** use the `resource_types.totalUnits` column for individual types (it stays `null`).
 
 **Assignments are never used in this formula.** A unit that has been assigned to a booking is not "less available" than one that hasn't — the reservation already accounts for the capacity. Using assignments as a proxy for availability would double-count and produce incorrect results.
 
@@ -293,7 +359,7 @@ For **individual mode**: `usableUnits` is computed from the `resourceItems` tabl
 |---|---|
 | `resourceTypeId` | From `addonCatalog.resourceTypeId` |
 | `quantity` | Requested by golfer |
-| `unitsConsumed` | From `addonCatalog.unitsConsumed` |
+| `unitsConsumed` | From `addonCatalog.unitsConsumed` (Plan 2). **Default `1`** when catalog lines do not yet store it. |
 | `newBookingStart` | `teeSlot.datetime` |
 | `newBookingEnd` | `teeSlot.datetime + resolvedWindow + turnaroundBuffer` |
 
@@ -305,13 +371,13 @@ For **individual mode**: `usableUnits` is computed from the `resourceItems` tabl
 
 **Rental, pool mode:**
 1. Acquire `SELECT ... FOR UPDATE` on the `resourceTypes` row.
-2. Compute `usableUnits = totalUnits` (pool mode does not track items).
+2. Compute `usableUnits = totalUnits - SUM(units FROM pool_maintenance_holds WHERE resourceTypeId = :typeId AND resolvedAt IS NULL)`.
 3. Query `overlappingReservations` using `bookingStart`/`bookingEnd` indexed range scan.
 4. Available if `usableUnits - overlappingReservations >= quantity × unitsConsumed`.
 
 **Rental, individual mode:**
 1. Acquire `SELECT ... FOR UPDATE` on the `resourceTypes` row.
-2. Compute `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available' OR operationalStatus = 'maintenance') - inMaintenance`. Simplify: `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available')`.
+2. Compute `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available')` (maintenance and retired units are excluded from usable capacity).
 3. Query `overlappingReservations` using indexed range scan.
 4. Available if `usableUnits - overlappingReservations >= quantity × unitsConsumed`.
 
@@ -444,17 +510,25 @@ These are added in Plan 2, Feature D (where `bookingAddonLines` is defined). Doc
 
 | Method | Path | Min role | Notes |
 |---|---|---|---|
-| `GET` | `/api/bookings/:bookingId/addons/:lineId/assignments` | staff | List current assignments for a line |
+| `GET` | `/api/bookings/:bookingId/addons/:lineId/assignments` | staff | List active assignments (`supersededAt IS NULL`) for a line |
 | `POST` | `/api/bookings/:bookingId/addons/:lineId/assignments` | staff | Assign a specific item to a slot |
-| `DELETE` | `/api/bookings/:bookingId/addons/:lineId/assignments/:assignmentId` | staff | Unassign / prepare for reassignment |
+| `PATCH` | `/api/bookings/:bookingId/addons/:lineId/assignments/:assignmentId/supersede` | staff | Reassign: supersede the current assignment and insert a replacement |
 
 `POST /assignments` body: `{ resourceItemId: string }`.
 
 Steps:
 1. Verify item belongs to the correct resource type and club.
 2. Verify `operationalStatus = 'available'`.
-3. Verify item not in a conflicting assignment window (`booking_resource_assignments JOIN booking_addon_lines` — check overlap using `bookingStart`/`bookingEnd`). Note: no resource type lock needed here because this is assignment to already-reserved capacity, not a new capacity claim.
+3. Verify item not in a conflicting assignment window (`booking_resource_assignments JOIN booking_addon_lines` — check overlap using `bookingStart`/`bookingEnd`, filtering `supersededAt IS NULL`). Note: no resource type lock needed here because this is assignment to already-reserved capacity, not a new capacity claim.
 4. Insert `booking_resource_assignments` row with `assignedBy = req.auth.userId`.
+
+`PATCH /assignments/:assignmentId/supersede` body: `{ resourceItemId: string }` (the replacement unit).
+
+Steps:
+1. Verify the existing assignment row belongs to this line and `supersededAt IS NULL`.
+2. Run all validation checks (steps 1–3 above) against the replacement item.
+3. In a single transaction: insert the new `booking_resource_assignments` row, then set `supersededAt = now()` on the previous active row for this slot/line (same ordering rules as `POST` reassignment).
+4. Return the new assignment row.
 
 ---
 
@@ -474,7 +548,7 @@ Steps:
 **System behaviour:**
 - The Resources page and BookingDrawer surface a warning: "Unit [label] is assigned to booking [ref] but is currently in maintenance."
 - The system does NOT automatically cancel or reassign — this is an operational decision.
-- Staff use the assignment UI to delete the stale assignment and assign a different item.
+- Staff use the assignment UI to supersede the stale assignment with a different item.
 - If no alternative unit is available, staff resolve operationally (e.g., upgrade the golfer, offer a refund, note in the booking).
 
 **Why the system does not auto-reassign:** Auto-reassignment would require knowing staff priorities, golfer preferences, and operational context. It is safer to surface the conflict and let staff resolve it.
@@ -489,8 +563,8 @@ When `assignmentStrategy = "auto"` and two concurrent bookings both try to auto-
 
 When a booking with `booking_resource_assignments` rows is cancelled:
 1. `bookingAddonLines.status` is set to `"cancelled"`.
-2. `booking_resource_assignments` rows are soft-deleted (or left in place with a cancelled state — implementation choice).
-3. The cancelled lines are excluded from the overlap query (`status != 'cancelled'`), so those units become available for new reservations immediately.
+2. `booking_resource_assignments` rows are left in place (never deleted). Their history is preserved.
+3. The cancelled lines are excluded from the overlap query (`status != 'cancelled'`), so those units become available for new reservations immediately. Active-assignment queries that include a `bookingAddonLines` status join will naturally exclude the cancelled lines.
 
 ---
 
@@ -501,8 +575,8 @@ CreateResourceTypeSchema
   name: string (1–100 chars)
   usageModel: "rental" | "consumable" | "service"
   trackingMode: "pool" | "individual" | null
-    -- required (non-null) when usageModel = "rental" or "service"
-    -- must be null when usageModel = "consumable"
+    -- required (non-null) when usageModel = "rental" only
+    -- must be null when usageModel = "consumable" or "service"
   assignmentStrategy: "auto" | "manual" | "none"
     -- STRICT RULES (cross-field refinement):
     -- IF trackingMode = "pool" THEN assignmentStrategy must be "none"
@@ -528,8 +602,8 @@ CreateResourceTypeSchema
 
 PatchResourceTypeSchema
   -- all fields optional; same cross-field constraints apply when fields are present
-  -- changing usageModel or trackingMode must still satisfy all constraints
-  -- changing assignmentStrategy from "manual" to "auto" (or vice versa) is allowed;
+  -- usageModel and trackingMode: reject changes after create (immutable) — see "Resource type lifecycle and mutability"
+  -- changing assignmentStrategy from "manual" to "auto" (or vice versa) is allowed when trackingMode = "individual";
      it only affects future bookings — existing reservations and assignments are unchanged
 
 CreateResourceItemSchema
@@ -543,7 +617,7 @@ CreateResourceItemSchema
 PatchResourceItemSchema
   -- label, operationalStatus, maintenanceNote, lastServicedAt, meta, sortOrder — all optional
   -- operationalStatus transition to "retired" is allowed; back from "retired" is not
-  -- if operationalStatus changes, a reason string is strongly recommended (written to status log)
+  -- optional `reason`: if provided on a status change, persisted to resourceItemStatusLog; not required by schema
   reason: string | null
 
 RestockSchema
@@ -552,6 +626,16 @@ RestockSchema
 
 AssignResourceItemSchema
   resourceItemId: uuid
+
+SupersedeAssignmentSchema
+  resourceItemId: uuid   -- the replacement item
+
+CreatePoolMaintenanceHoldSchema
+  units: positive int
+  reason: string | null
+
+ResolvePoolMaintenanceHoldSchema
+  -- no body required; resolvedAt and resolvedBy set server-side
 ```
 
 ---
@@ -562,15 +646,18 @@ All endpoints require `authenticate` + `requireClubAccess`. Type create/update/d
 
 | Method | Path | Min role | Notes |
 |---|---|---|---|
-| `GET` | `/api/clubs/:clubId/resources` | staff | List all types with computed availability |
+| `GET` | `/api/clubs/:clubId/resources` | staff | List all types (including `active: false`); computed fields are a **point-in-time snapshot** at request time |
 | `POST` | `/api/clubs/:clubId/resources` | club_admin | Create resource type; enforces `assignmentStrategy` constraints |
 | `PATCH` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Update type |
-| `DELETE` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Soft-delete; blocked if active items or active reservations exist |
+| `DELETE` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Sets `deletedAt` (soft-delete); blocked if any `resourceItems` row is not `retired`, or any non-cancelled reservation references the type. Prefer `PATCH { active: false }` to hide from catalog without deleting. |
 | `GET` | `/api/clubs/:clubId/resources/:typeId/items` | staff | List items with current operational status and active assignment count |
 | `POST` | `/api/clubs/:clubId/resources/:typeId/items` | club_admin | Add item |
 | `PATCH` | `/api/clubs/:clubId/resources/:typeId/items/:itemId` | staff | Update status, note, label; writes status log row |
 | `GET` | `/api/clubs/:clubId/resources/:typeId/items/:itemId/log` | staff | View `resourceItemStatusLog` for this item |
 | `POST` | `/api/clubs/:clubId/resources/:typeId/restock` | staff | Log consumable stock change |
+| `GET` | `/api/clubs/:clubId/resources/:typeId/maintenance-holds` | staff | List all holds (active and resolved) for a pool-mode type |
+| `POST` | `/api/clubs/:clubId/resources/:typeId/maintenance-holds` | staff | Create a new maintenance hold (pool mode only) |
+| `PATCH` | `/api/clubs/:clubId/resources/:typeId/maintenance-holds/:holdId/resolve` | staff | Resolve a hold — sets `resolvedAt` and `resolvedBy` |
 
 **`GET /resources` response shape per type:**
 
@@ -582,13 +669,16 @@ All endpoints require `authenticate` + `requireClubAccess`. Type create/update/d
   "trackingMode": "individual",
   "assignmentStrategy": "manual",
   "totalUnits": 8,
+    // individual: non-retired item count (available + maintenance); pool: totalUnits column
   "availableNow": 6,
     // individual: COUNT(items WHERE operationalStatus='available')
     //             MINUS overlapping reservations at this moment
-    // pool: totalUnits MINUS overlapping reservation SUM at this moment
+    // pool: totalUnits MINUS active maintenance hold units MINUS overlapping reservation SUM at this moment
     // consumable+trackInventory=false: null  → UI shows "Unlimited"
     // consumable+trackInventory=true: currentStock
-  "inMaintenance": 1,     // individual only
+  "inMaintenance": 1,
+    // individual: COUNT(items WHERE operationalStatus='maintenance')
+    // pool: SUM(units FROM pool_maintenance_holds WHERE resolvedAt IS NULL)
   "inUseBooked": 1,       // individual only: units in an active reservation window right now
     //                       NOTE: computed from bookingAddonLines windows, not assignments
   "overAllocated": false, // true if usableUnits - overlappingReservations < 0
@@ -599,6 +689,8 @@ All endpoints require `authenticate` + `requireClubAccess`. Type create/update/d
 ```
 
 When `overAllocated = true`, the UI renders a warning on the resource type card.
+
+**Staff vs catalog visibility:** `active = false` hides the type from the **public** add-on catalog only (Plan 2). Staff resource management always lists inactive types so they can be reactivated. Types with `deletedAt` set are omitted from default staff lists (unless an admin audit view is added later).
 
 ---
 
@@ -622,7 +714,7 @@ For **individual mode**: expandable card showing each unit as a row with:
 - "Mark maintenance" / "Mark available" buttons; "Retire" in kebab menu
 - If unit is assigned to a future booking and status changes to maintenance: warning badge on the item row
 
-For **pool mode**: aggregate counts + inline "Update capacity" field + "Currently reserved" read-only count (from `bookingAddonLines` overlap query at current time).
+For **pool mode**: aggregate counts + inline "Update capacity" field + "Currently reserved" read-only count (from `bookingAddonLines` overlap query at current time) + "In maintenance" count (from active `pool_maintenance_holds` rows) + "Add maintenance hold" button. Each active hold is shown as a row with its unit count, reason, and a "Resolve" button. Resolved holds are shown in a collapsible history section.
 
 ---
 
@@ -683,15 +775,15 @@ Display-only. Name + "Availability managed manually" notice.
 
 | Area | File | Change |
 |---|---|---|
-| DB schema | `packages/db/src/schema/resources.ts` | New — `resourceTypes`, `resourceItems`, `booking_resource_assignments`, `resourceItemStatusLog`, `resourceRestockLog` tables + relations |
+| DB schema | `packages/db/src/schema/resources.ts` | New — `resourceTypes`, `resourceItems`, `pool_maintenance_holds`, `booking_resource_assignments`, `resourceItemStatusLog`, `resourceRestockLog` tables + relations |
 | DB schema index | `packages/db/src/schema/index.ts` | Export new tables |
 | DB bookings schema | `packages/db/src/schema/bookings.ts` | Add `"27hole"` and `"36hole"` to `slotType` |
 | DB slot generator | `apps/api/src/lib/slotGenerator.ts` | Add `"27hole"` and `"36hole"` to `SlotType` |
-| DB migration | `packages/db/drizzle/` | `pnpm db:generate` then `pnpm db:migrate` |
+| DB migration | `packages/db/drizzle/` | `pnpm db:generate` then `pnpm db:migrate` — includes `resource_types.deleted_at` and per-table indexes per "Indexes" section |
 | DB index (Feature D) | Migration (Plan 2 Feature D) | Composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` |
-| Validators | `packages/validators/src/resources.ts` | New file — includes `assignmentStrategy` cross-field refinements |
+| Validators | `packages/validators/src/resources.ts` | New file — includes `assignmentStrategy` cross-field refinements, `SupersedeAssignmentSchema`, `CreatePoolMaintenanceHoldSchema` |
 | Validators index | `packages/validators/src/index.ts` | Export new schemas |
-| API routes | `apps/api/src/routes/resources.ts` | New file |
+| API routes | `apps/api/src/routes/resources.ts` | New file — includes pool maintenance hold endpoints |
 | App mount | `apps/api/src/app.ts` | Mount resources router at `/api/clubs/:clubId` |
 | Resources page | `apps/web/app/(club)/club/[clubId]/resources/page.tsx` | New server component |
 | Resources client | `apps/web/app/(club)/club/[clubId]/resources/ResourcesClient.tsx` | New client component |
@@ -705,10 +797,9 @@ Display-only. Name + "Availability managed manually" notice.
 |---|---|
 | **Service scheduling** | `service` usageModel is a placeholder. A real scheduling engine (staff calendars, per-instructor booking windows) is a separate system. Do not expand without a dedicated plan. |
 | **Pricing layer** | Resource types carry no price. Pricing lives on `addonCatalog` (Plan 2, Feature D). The same resource type can back differently-priced add-ons. |
-| **Reassignment audit trail** | Deleting and re-inserting `booking_resource_assignments` rows loses the history of who was assigned before. If audit depth is needed later, add `supersededAt` and soft-replace rather than hard-delete. |
-| **Pool mode maintenance tracking** | Pool types have no item rows, so `maintenance` units cannot be individually tracked. Staff update `totalUnits` manually when units go in or out of service. A future extension could add a `pool_maintenance_holds` table. |
 | **Resource reservations (high concurrency)** | Replace `SELECT ... FOR UPDATE` with a `resource_reservations` table with TTL holds for very high concurrency. Not needed at golf club scale. |
 | **Auto-assignment timing** | This plan assigns at booking creation time. A future variant could defer auto-assignment to N hours before the tee time to maximise flexibility, but this adds scheduling complexity. |
+| **Bulk item creation** | Optional later: `POST .../items/bulk` for many labels at once — not required for v1. |
 
 ---
 
@@ -719,6 +810,10 @@ Display-only. Name + "Availability managed manually" notice.
 | Create resource type: `trackingMode="pool"`, `assignmentStrategy="manual"` | Validation error: pool mode requires `assignmentStrategy="none"` |
 | Create resource type: `usageModel="consumable"`, `assignmentStrategy="auto"` | Validation error: consumables require `assignmentStrategy="none"` |
 | Create resource type: `trackingMode="individual"`, `assignmentStrategy="none"` | Validation error: individual mode requires `"auto"` or `"manual"` |
+| Create service type with `trackingMode="pool"` | Validation error: service must use `trackingMode = null` |
+| `PATCH` resource type: change `usageModel` or `trackingMode` | Rejected (immutable after create) |
+| `GET /resources` with an inactive type | Inactive type appears with `active: false`; catalog (Plan 2) hides it |
+| `DELETE /resources/:typeId` | Sets `deletedAt`; blocked when any item is not `retired` or any non-cancelled reservation exists |
 | Create valid rental type: individual, manual, 12 units, 18-hole window 270 min | Created successfully; page shows 12 available |
 | Create valid rental type: individual, auto, 8 units | Created successfully |
 | Create valid pool type: pool, `assignmentStrategy` auto-set to "none" | Created; no assignment strategy shown in UI |
@@ -738,4 +833,10 @@ Display-only. Name + "Availability managed manually" notice.
 | Booking window expires without any action | Unit returns to green "available" — no staff action required |
 | Create "Consumables" type, track=false | Shows "Unlimited — not tracked" |
 | Restock consumable +50 | Stock increments; log records entry |
+| Staff reassigns a unit via `PATCH /assignments/:id/supersede` | Old row gains `supersededAt`; new row is active; BookingDrawer shows replacement unit |
+| View assignment history for a line | All rows for the line returned; order by `assignedAt` for timeline (no `supersededById` link) |
+| Create pool maintenance hold: 2 units, "Winter storage" | Hold created; pool `availableNow` decreases by 2; `inMaintenance` shows 2 |
+| Pool type with 10 totalUnits, 2-unit maintenance hold, 6-unit reservation | `availableNow = 2`, `overAllocated = false` |
+| Pool type with 10 totalUnits, 4-unit maintenance hold, 8-unit reservation | `availableNow = -2`, `overAllocated = true`; red warning on card |
+| Resolve pool maintenance hold | `resolvedAt` set; `availableNow` increases; hold appears in history section |
 | Two conflicting availability values (unit in maintenance reduces usableUnits below reservations) | `overAllocated = true` in API response; red warning strip on resource card |

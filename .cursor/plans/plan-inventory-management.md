@@ -7,14 +7,16 @@
 ## Design Principles
 
 1. **Usage model is the primary discriminator.** How a resource behaves (rented and returned, consumed and gone, or service-based) determines all downstream logic. Tracking mode (pool vs individual) is secondary and only applies to rentals and services.
-2. **Rentals auto-hold based on the booking.** No staff action is required to mark a cart as "in use." The hold is computed from `bookingAddonLines` rows — not a stored status field. When the rental window expires, units are automatically available again with no cron job required.
-3. **Rental windows are per-slot-type, not a single number.** A 9-hole round and an 18-hole round don't return a cart at the same time. Clubs configure the expected window per format (9-hole, 18-hole, 27-hole, 36-hole) plus a turnaround buffer.
-4. **Consumables can be sold with or without stock tracking.** A club selling towels may not want to count every towel — they just want it to appear in the add-on catalog. Stock tracking is opt-in per resource type.
-5. **`item_status` is operational; `in_use` is computed, never stored.** Storing `in_use` on the item row creates a derived-state maintenance problem. The item row only ever reflects physical condition: `available`, `maintenance`, or `retired`. Whether a unit is logically occupied by a booking is determined at query time from `bookingAddonLines`.
-6. **Availability checks run inside a transaction with a row lock.** The check-then-insert pattern is only safe when the resource type row is locked during the transaction. Without this, concurrent bookings will oversell inventory.
-7. **`booking_start` and `booking_end` are precomputed and stored on `bookingAddonLines`.** The rental window resolution (jsonb lookup + slotType join) is expensive at scale. Pre-storing the actual occupied interval makes the overlap query a simple indexed range check.
-8. **`meta` jsonb provides per-type flexibility** for attributes not worth making into first-class columns (e.g., caddie handicap, cart battery type, club set condition rating).
-9. **`service` is a defined placeholder.** Lessons, fittings, and simulator bays require a calendar-based scheduling engine. This plan records the category and displays it in the UI but deliberately defers availability logic. This is not a small feature — plan a dedicated scheduling system when the time comes.
+2. **Bookings reserve quantity, not specific items.** A booking creates a capacity reservation against a resource type. Which specific unit fulfils that reservation is a separate, later concern — handled by `assignmentStrategy`. Availability is always computed from total usable units minus overlapping reservations. Assigned items are never the source of truth for capacity.
+3. **Assignment is a first-class, configurable concept.** `assignmentStrategy` on `resourceTypes` determines when and how specific units are matched to reservations: automatically at booking time (`"auto"`), deferred to staff at check-in (`"manual"`), or not applicable (`"none"`). This is per-type, not per-booking.
+4. **Rental windows are per-slot-type, not a single number.** A 9-hole round and an 18-hole round don't return a unit at the same time. Clubs configure the expected window per format (9-hole, 18-hole, 27-hole, 36-hole) plus a turnaround buffer.
+5. **Consumables can be sold with or without stock tracking.** Stock tracking is opt-in per resource type. An untracked consumable is always available with no stock check.
+6. **`operationalStatus` is physical condition only; `in_use` is never stored.** The item row reflects physical state: `available`, `maintenance`, or `retired`. Whether a unit is logically occupied by a booking is computed at query time from `bookingAddonLines`. Storing `in_use` creates a derived-state maintenance problem.
+7. **Availability checks run inside a transaction with a row lock.** The check-then-insert pattern is only safe when the resource type row is locked during the transaction. Without this, concurrent bookings will oversell inventory.
+8. **`booking_start` and `booking_end` are precomputed and stored on `bookingAddonLines`.** Pre-storing the occupied interval makes the overlap query a simple indexed range scan rather than a per-row JSON resolution.
+9. **`meta` jsonb provides per-type flexibility** for attributes not worth making into first-class columns (e.g., caddie certification, equipment condition rating).
+10. **`service` is a defined placeholder.** A scheduling engine for lessons, fittings, and simulator bays is a separate system of comparable complexity to this entire plan. Do not expand it without a dedicated plan.
+11. **The system is generic.** No logic is specific to any resource category (carts, caddies, clubs). Everything is driven by `resourceType` configuration.
 
 ---
 
@@ -22,16 +24,16 @@
 
 27 holes is played regularly — particularly at courses with three 9-hole loops. 36 holes occurs at club days, charity tournaments, and competitive amateur rounds. The system supports:
 
-| `slotType` value | Typical on-course time | Example cart window (inc. turnaround) |
+| `slotType` value | Typical on-course time | Example rental window (inc. turnaround) |
 |---|---|---|
 | `9hole` | ~2 h 15 min | ~2 h 45 min (165 min) |
 | `18hole` | ~4 h 30 min | ~5 h 00 min (300 min) |
 | `27hole` | ~6 h 45 min | ~7 h 30 min (450 min) |
 | `36hole` | ~9 h 00 min | ~9 h 45 min (585 min) |
 
-The existing `tee_slots.slotType` column already stores `"9hole"` and `"18hole"`. This plan extends it with `"27hole"` and `"36hole"` as valid values. The `bookings.ts` schema and `slotGenerator.ts` must be updated accordingly.
+The existing `tee_slots.slotType` column stores `"9hole"` and `"18hole"`. This plan extends it with `"27hole"` and `"36hole"`. The `bookings.ts` schema and `slotGenerator.ts` must be updated accordingly.
 
-Clubs configure the window per resource type — a caddie and a golf cart do not have the same return schedule. The rental window should include a turnaround buffer configured separately (see `turnaroundBufferMinutes` below).
+Clubs configure the rental window per resource type — different asset types have different return schedules. The window includes a turnaround buffer configured separately (see `turnaroundBufferMinutes` below).
 
 ---
 
@@ -47,33 +49,65 @@ The category-level table. One row per type of asset per club.
 | `clubId` | uuid FK → clubs | |
 | `name` | text | "Golf Carts", "Towels", "Caddies" |
 | `usageModel` | text | `"rental"` \| `"consumable"` \| `"service"` |
-| `trackingMode` | text nullable | `"pool"` \| `"individual"` — required for `rental`/`service`; null for `consumable` |
-| `assignmentMode` | text nullable | `"auto"` \| `"manual"` \| `"none"` — rental/individual only. See Assignment Mode below. |
+| `trackingMode` | text nullable | `"pool"` \| `"individual"` — see constraint table below |
+| `assignmentStrategy` | text | `"auto"` \| `"manual"` \| `"none"` — see constraint table below |
 | `totalUnits` | int nullable | Pool mode: hard capacity ceiling. Individual mode: derived from item count at query time. |
 | `trackInventory` | bool default true | Consumable only. `false` = unlimited, no stock check ever performed. |
-| `currentStock` | int nullable | Consumable + `trackInventory=true`: current on-hand count. Decrements on sale, increments on restock. |
+| `currentStock` | int nullable | Consumable + `trackInventory=true`: current on-hand count. |
 | `rentalWindows` | jsonb nullable | Rental only. Maps slotType → minutes (excluding buffer). See format below. |
-| `turnaroundBufferMinutes` | int default 0 | Added to rental window end. Prevents back-to-back allocation with no cleaning time. |
+| `turnaroundBufferMinutes` | int default 0 | Added to rental window end. Prevents back-to-back allocation without cleaning time. |
 | `notes` | text nullable | Internal staff notes |
-| `sortOrder` | int default 0 | Controls display order on the Resources page |
+| `sortOrder` | int default 0 | |
 | `active` | bool default true | Inactive types are hidden from the add-on catalog |
 | `createdAt` | timestamptz defaultNow | |
 
-**`usageModel` values:**
+---
 
-- `"rental"` — physical asset that leaves and returns. Golf carts, GPS units, club sets, push carts. Availability computed from active booking holds in the rental window.
-- `"consumable"` — asset consumed on sale. Towels, range balls, F&B packages, golf tees. If `trackInventory = false`, always available (no stock check). If `trackInventory = true`, availability is `currentStock > 0`.
-- `"service"` — reserved category for future scheduling (lessons, fittings, simulator bays). No availability logic in this plan. The UI shows the entry but marks it "availability managed manually." Do not conflate with `rental` — a service scheduling engine is a fundamentally different system.
+#### `usageModel` values
 
-**`assignmentMode` values (rental + individual tracking mode only):**
+| Value | Meaning |
+|---|---|
+| `"rental"` | Physical asset that leaves and returns. Availability computed from booking window overlaps. |
+| `"consumable"` | Asset consumed on sale. Availability is `currentStock > 0` (if tracked) or always available (if untracked). |
+| `"service"` | Placeholder for future scheduling (lessons, fittings, simulator bays). No availability logic in this plan. |
 
-- `"auto"` — the system picks the first available item at booking time and sets `bookingAddonLines.resourceItemId`. Golfer and staff see the assignment immediately.
-- `"manual"` — the system holds capacity at booking time (counts units) but does not assign a specific item. Staff assign a specific item at check-in via the BookingDrawer. This is the recommended default — operationally flexible.
-- `"none"` — used for pool mode (no items to assign). Set automatically; not user-configurable.
+---
 
-For **pool mode**, `assignmentMode` is always `"none"` — there are no individual items to assign.
+#### `trackingMode` values
 
-**`rentalWindows` jsonb format:**
+| Value | Meaning |
+|---|---|
+| `"pool"` | Tracked as an aggregate count only. No individual unit records. |
+| `"individual"` | Each unit has its own `resourceItems` row with `operationalStatus` and audit history. |
+| `null` | Consumables never have a tracking mode. |
+
+---
+
+#### `assignmentStrategy` — Strict Validation Rules
+
+`assignmentStrategy` is always required and must satisfy these constraints. Violations are rejected at the validator layer before hitting the database.
+
+| Condition | Required `assignmentStrategy` | Reason |
+|---|---|---|
+| `trackingMode = "pool"` | must be `"none"` | Pool types have no individual items to assign |
+| `usageModel = "consumable"` | must be `"none"` | Consumables are consumed, not assigned |
+| `usageModel = "service"` | must be `"none"` | No assignment logic until scheduling engine exists |
+| `trackingMode = "individual"` | must be `"auto"` or `"manual"` | Individual items require an explicit assignment strategy |
+
+These constraints are enforced in:
+- `CreateResourceTypeSchema` (validator-layer cross-field refinement)
+- `PatchResourceTypeSchema` (same)
+- API handler (redundant safety check before DB write)
+
+| `assignmentStrategy` value | Meaning |
+|---|---|
+| `"none"` | No item assignment — pool counts, consumables, services |
+| `"auto"` | System selects and assigns a specific item at booking creation time |
+| `"manual"` | Capacity is reserved at booking time; a specific item is assigned later by staff (e.g., at check-in) |
+
+---
+
+#### `rentalWindows` jsonb format
 
 ```json
 { "9hole": 150, "18hole": 270, "27hole": 420, "36hole": 540, "default": 270 }
@@ -85,7 +119,7 @@ All values in minutes, **not including** `turnaroundBufferMinutes`. The effectiv
 effectiveEnd = bookingStart + rentalWindowMinutes + turnaroundBufferMinutes
 ```
 
-The `"default"` key is the fallback when the booking's slot type is not listed. Resolution:
+Resolution order at compute time:
 
 ```
 rentalWindows[booking.teeSlot.slotType] ?? rentalWindows["default"] ?? 480
@@ -93,9 +127,7 @@ rentalWindows[booking.teeSlot.slotType] ?? rentalWindows["default"] ?? 480
 
 The 480-minute (8-hour) hard fallback prevents undefined behaviour if neither key is present. Clubs are warned in the UI if they save a rental type with no `"default"` set.
 
-**Why `turnaroundBufferMinutes` is separate from `rentalWindows`:**
-
-A club may want to show golfers "cart rental: 4.5 hours" in the catalog while actually blocking 5 hours (with a 30-min turnaround). Keeping these separate means the displayed rental duration and the operational hold are independently configurable.
+**Why `turnaroundBufferMinutes` is separate from `rentalWindows`:** A club may show golfers "rental: 4.5 hours" in the catalog while actually blocking 5 hours operationally. Keeping these separate means the displayed rental duration and the operational hold are independently configurable.
 
 ---
 
@@ -108,9 +140,9 @@ Per-unit records. Only populated for `trackingMode = "individual"` resource type
 | `id` | uuid PK | |
 | `resourceTypeId` | uuid FK → resourceTypes CASCADE | |
 | `clubId` | uuid | Denormalized for query efficiency |
-| `label` | text | "Cart #7", "Tom H.", "Blue Bag Set" |
+| `label` | text | "Unit #7", "Tom H.", "Blue Bag Set" |
 | `operationalStatus` | text | `"available"` \| `"maintenance"` \| `"retired"` |
-| `maintenanceNote` | text nullable | "Needs new front tire — in shop" |
+| `maintenanceNote` | text nullable | |
 | `lastServicedAt` | timestamptz nullable | |
 | `meta` | jsonb nullable | Flexible per category |
 | `sortOrder` | int default 0 | |
@@ -119,14 +151,14 @@ Per-unit records. Only populated for `trackingMode = "individual"` resource type
 
 **`operationalStatus` — physical condition only, never `in_use`:**
 
-`in_use` is a derived state computed at query time from active `bookingAddonLines`. It is not stored. This prevents the class of bugs where a status update is missed, leaving an item permanently stuck as `in_use` after a booking is cancelled or a window expires.
+`in_use` is a derived state computed at query time from active `bookingAddonLines` and `booking_resource_assignments`. It is not stored. This prevents the class of bugs where a status update is missed, leaving a unit permanently stuck as `in_use` after a booking is cancelled or a window expires.
 
-The UI shows a fourth visual state — "In Use (booked)" — which is computed from the overlap query. The underlying `operationalStatus` remains `"available"` when a unit is booked but physically sound.
+The UI shows a fourth visual state — "In Use (booked)" — which is computed from the overlap query. The underlying `operationalStatus` remains `"available"` when a unit is reserved or assigned but physically sound.
 
 | `operationalStatus` value | Meaning |
 |---|---|
-| `available` | Unit is physically sound and ready to use |
-| `maintenance` | Unit is physically unserviceable — in the shop, broken, etc. |
+| `available` | Unit is physically sound and ready for use or assignment |
+| `maintenance` | Unit is physically unserviceable — broken, in the shop, etc. |
 | `retired` | Permanently decommissioned. Never returns to service. |
 
 **Status transition rules:**
@@ -137,13 +169,31 @@ The UI shows a fourth visual state — "In Use (booked)" — which is computed f
 | `maintenance` | `available` | Staff clears it |
 | `any` | `retired` | Staff retires — permanent; no transition back |
 
-**Manual override always wins for availability:** When `operationalStatus = "available"` and there is an active booking line, the UI shows "In Use (booked)" but the item is not blocked from re-assignment if the booking line is cancelled. When `operationalStatus = "maintenance"` or `"retired"`, the item is always excluded from the available pool regardless of booking state.
+---
+
+### `booking_resource_assignments`
+
+The table that records which specific `resourceItem` fulfils a given reservation. Decoupled from `bookingAddonLines` to support `quantity > 1`, deferred assignment, and reassignment.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `bookingAddonLineId` | uuid FK → bookingAddonLines CASCADE | The reservation this assignment fulfils |
+| `resourceItemId` | uuid FK → resourceItems | The specific unit assigned |
+| `assignedAt` | timestamptz defaultNow | |
+| `assignedBy` | uuid FK → users nullable | `null` = system-assigned (auto strategy); user id = staff-assigned (manual strategy) |
+
+**One row per unit per line.** If `bookingAddonLines.quantity = 3` and `assignmentStrategy = "auto"`, three rows are inserted — one per unit selected. If `assignmentStrategy = "manual"`, rows are inserted later by staff as they assign each unit.
+
+**Relationship to `bookingAddonLines`:** `bookingAddonLines` never stores a `resourceItemId` directly. All item assignments live in this table. `bookingAddonLines` carries the reservation (quantity, window, pricing); `booking_resource_assignments` carries the fulfilment (which specific unit).
+
+**Reassignment:** To reassign a unit, delete the existing row and insert a new one with the replacement `resourceItemId`. The old assignment is gone; the new one is recorded with the staff member's `assignedBy`. If a full audit trail of reassignments is needed in a future iteration, this table can gain a `supersededAt` column and reassignments can be soft-replaced rather than deleted.
 
 ---
 
 ### `resourceItemStatusLog`
 
-Audit trail for every operational status change on individual items.
+Audit trail for every `operationalStatus` change on individual items.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -155,7 +205,7 @@ Audit trail for every operational status change on individual items.
 | `changedBy` | uuid FK → users | |
 | `changedAt` | timestamptz defaultNow | |
 
-Every `PATCH /items/:itemId` that changes `operationalStatus` inserts a log row in the same transaction. This gives a full audit trail: who marked Cart #7 as maintenance, when it came back, who retired it.
+Every `PATCH /items/:itemId` that changes `operationalStatus` inserts a log row in the same transaction.
 
 ---
 
@@ -182,6 +232,104 @@ Update `packages/db/src/schema/bookings.ts` to add `"27hole"` and `"36hole"` as 
 
 ---
 
+## Reservation vs Assignment Model
+
+> This section defines the conceptual split that everything else in this plan depends on. Read it before implementing any booking or availability logic.
+
+### Reservations (capacity, not items)
+
+When a golfer books a tee time and selects an add-on (e.g., "Cart Rental, quantity 2"), a **reservation** is created. A reservation says:
+
+> "This booking requires 2 units of resource type X, beginning at time T and ending at time T + window."
+
+The reservation is stored as a `bookingAddonLines` row with `quantity = 2`, `bookingStart`, and `bookingEnd`. It makes no claim about *which* units.
+
+### Assignments (specific items)
+
+An **assignment** maps a specific `resourceItem` to a reservation. It says:
+
+> "Unit Y will fulfil slot 1 of this reservation."
+
+Assignments are stored in `booking_resource_assignments`. They are created either automatically at booking time (`assignmentStrategy = "auto"`) or later by staff (`assignmentStrategy = "manual"`).
+
+### Why they are separate
+
+Separating reservations from assignments provides three properties that are impossible if you conflate them:
+
+1. **Deferred assignment.** A club using `"manual"` strategy doesn't need to know which unit goes to which golfer until check-in. The capacity is still correctly held.
+2. **Reassignment.** If a unit goes into maintenance after it was assigned, a staff member can swap it without changing the reservation. The booking is unaffected; only the assignment row changes.
+3. **Correct availability under maintenance.** Availability is computed from total usable units minus overlapping reservations — not from assigned items. This means marking a unit as `maintenance` correctly reduces available capacity for *future* bookings, even if the unit has no current assignment.
+
+### The Authoritative Availability Formula
+
+```
+usableUnits = totalUnits
+              - COUNT(items WHERE operationalStatus = 'maintenance')
+              - COUNT(items WHERE operationalStatus = 'retired')
+
+overlappingReservations = SUM(quantity) FROM bookingAddonLines
+                          WHERE resource_type_id = :typeId
+                            AND booking_start < :newEnd
+                            AND booking_end > :newStart
+                            AND status != 'cancelled'
+                            AND booking.deleted_at IS NULL
+
+available = usableUnits - overlappingReservations
+```
+
+For **pool mode**: `usableUnits = totalUnits` (no items to query; maintenance is tracked separately via the restock log or a manual capacity update).
+
+For **individual mode**: `usableUnits` is computed from the `resourceItems` table as shown above.
+
+**Assignments are never used in this formula.** A unit that has been assigned to a booking is not "less available" than one that hasn't — the reservation already accounts for the capacity. Using assignments as a proxy for availability would double-count and produce incorrect results.
+
+---
+
+## Availability Logic — Full Specification
+
+### Inputs
+
+| Input | Source |
+|---|---|
+| `resourceTypeId` | From `addonCatalog.resourceTypeId` |
+| `quantity` | Requested by golfer |
+| `unitsConsumed` | From `addonCatalog.unitsConsumed` |
+| `newBookingStart` | `teeSlot.datetime` |
+| `newBookingEnd` | `teeSlot.datetime + resolvedWindow + turnaroundBuffer` |
+
+### By usage model
+
+**Consumable, `trackInventory = false`:** Always available. Skip all checks. No lock acquired.
+
+**Consumable, `trackInventory = true`:** Run `UPDATE resource_types SET current_stock = current_stock - :qty WHERE id = :typeId AND current_stock >= :qty RETURNING id`. If no row returned: 409 `ADDON_UNAVAILABLE`. (Atomic — no separate lock needed.)
+
+**Rental, pool mode:**
+1. Acquire `SELECT ... FOR UPDATE` on the `resourceTypes` row.
+2. Compute `usableUnits = totalUnits` (pool mode does not track items).
+3. Query `overlappingReservations` using `bookingStart`/`bookingEnd` indexed range scan.
+4. Available if `usableUnits - overlappingReservations >= quantity × unitsConsumed`.
+
+**Rental, individual mode:**
+1. Acquire `SELECT ... FOR UPDATE` on the `resourceTypes` row.
+2. Compute `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available' OR operationalStatus = 'maintenance') - inMaintenance`. Simplify: `usableUnits = COUNT(resourceItems WHERE operationalStatus = 'available')`.
+3. Query `overlappingReservations` using indexed range scan.
+4. Available if `usableUnits - overlappingReservations >= quantity × unitsConsumed`.
+
+### After the check passes
+
+For **pool mode**: insert `bookingAddonLines` row(s) with `quantity`, `bookingStart`, `bookingEnd`. No `booking_resource_assignments` rows.
+
+For **individual mode, `assignmentStrategy = "auto"`**:
+1. Select `quantity × unitsConsumed` items: `operationalStatus = 'available'` AND not in an overlapping reservation window AND not already assigned to an overlapping reservation. Order by `sortOrder ASC, id ASC`.
+2. Insert one `bookingAddonLines` row per item selected, each with `quantity = 1` (or one line with `quantity = N` and N assignment rows — either is valid; one-per-item is simpler to manage).
+3. Insert `booking_resource_assignments` rows: one per item, `assignedBy = null` (system).
+
+For **individual mode, `assignmentStrategy = "manual"`**:
+1. Insert one `bookingAddonLines` row with `quantity = N`. No `booking_resource_assignments` rows yet.
+2. Staff will insert assignment rows later via the assignment API.
+
+---
+
 ## Concurrency Strategy — Preventing Oversell
 
 > **This is the most critical correctness concern.** The availability check followed by an insert is only safe inside a serialised transaction. Without locking, two concurrent requests can both pass the check and both insert, exceeding capacity.
@@ -189,10 +337,10 @@ Update `packages/db/src/schema/bookings.ts` to add `"27hole"` and `"36hole"` as 
 ### The Problem
 
 ```
-Request A: check → 1 cart available ✓
-Request B: check → 1 cart available ✓   (A has not committed yet)
-Request A: insert bookingAddonLine       (1 cart now allocated)
-Request B: insert bookingAddonLine       (2 carts allocated — oversell)
+Request A: check → 1 unit available ✓
+Request B: check → 1 unit available ✓   (A has not committed yet)
+Request A: insert bookingAddonLine       (1 unit now reserved)
+Request B: insert bookingAddonLine       (2 units reserved — oversell)
 ```
 
 ### The Fix — Row-Level Lock on `resourceTypes`
@@ -202,101 +350,147 @@ Wrap the availability check and insert in a single DB transaction, acquiring a `
 ```sql
 BEGIN;
 
--- Acquire exclusive lock on the resource type row
-SELECT id, total_units FROM resource_types
+SELECT id, total_units, tracking_mode
+FROM resource_types
 WHERE id = :typeId
-FOR UPDATE;
+FOR UPDATE;                             -- all other transactions for this type wait here
 
--- Now run availability check (safe — no other transaction can modify this row)
-SELECT COUNT(*) * :unitsConsumed as allocated
+SELECT COALESCE(SUM(quantity * :unitsConsumed), 0) AS overlapping
 FROM booking_addon_lines bal
 JOIN bookings b ON bal.booking_id = b.id
 WHERE bal.resource_type_id = :typeId
   AND bal.status != 'cancelled'
   AND b.deleted_at IS NULL
-  AND bal.booking_start < :newEnd
-  AND bal.booking_end > :newStart;
+  AND bal.booking_start < :newBookingEnd
+  AND bal.booking_end > :newBookingStart;
 
--- If totalUnits - allocated >= requestedQuantity: proceed
+-- If (usableUnits - overlapping) >= requestedQuantity: proceed
 INSERT INTO booking_addon_lines (...) VALUES (...);
 
-COMMIT;
+COMMIT;                                 -- lock released; next waiting transaction proceeds
 ```
 
-The lock is held only for the duration of the transaction (milliseconds). At the volumes a golf club operates, this is not a bottleneck. If the platform scales to high-volume multi-club load, the lock scope can be narrowed to a `resource_reservations` table (see Future Scaling note below).
-
-**For consumable stock decrements**, use `UPDATE resource_types SET current_stock = current_stock - :qty WHERE id = :typeId AND current_stock >= :qty RETURNING id`. If no row is returned, the stock ran out between check and update — return 409.
-
-### Future Scaling Note (not in this plan)
-
-At very high concurrency, row-level locks on `resourceTypes` can become a bottleneck. The next step would be a `resource_reservations` table with short TTLs (5–10 minutes) used during the Stripe payment window. Reservations act as optimistic holds and expire automatically. This is the same pattern Ticketmaster and airline booking systems use. It is not needed at golf club scale.
+The lock is held for the duration of the transaction — milliseconds at golf club volumes. This is not a bottleneck. The known upgrade path for very high concurrency is a `resource_reservations` table with TTL holds (the Ticketmaster/airline pattern), but that is out of scope for this plan.
 
 ---
 
 ## `booking_start` and `booking_end` on `bookingAddonLines`
 
-> **This is the most important performance decision for the overlap query.**
-
-Rather than joining `tee_slots` + `resource_types.rental_windows` on every availability check query, precompute the occupied interval at booking creation time and store it directly on the `bookingAddonLines` row.
-
-These two columns are added to `bookingAddonLines` (defined in Plan 2, Feature D — documented here because the computation depends on inventory data):
+These two columns are added to `bookingAddonLines` (defined in Plan 2, Feature D). They are documented here because their values are derived from inventory data (`rentalWindows`, `turnaroundBufferMinutes`).
 
 | Column | Type | Notes |
 |---|---|---|
-| `bookingStart` | timestamptz | `= teeSlot.datetime` |
-| `bookingEnd` | timestamptz | `= teeSlot.datetime + resolvedWindowMinutes + turnaroundBufferMinutes` |
+| `bookingStart` | timestamptz | `= teeSlot.datetime`. Null for non-rental add-ons. |
+| `bookingEnd` | timestamptz | `= teeSlot.datetime + resolvedWindowMinutes + turnaroundBufferMinutes`. Null for non-rental add-ons. |
 
-The resolved window is computed **once** at insert time:
+The resolved window is computed once at insert time:
 
 ```ts
 const windowMinutes =
   resourceType.rentalWindows?.[teeSlot.slotType] ??
   resourceType.rentalWindows?.["default"] ??
   480;
+
 const bookingEnd = new Date(
   teeSlot.datetime.getTime() +
   (windowMinutes + resourceType.turnaroundBufferMinutes) * 60_000
 );
 ```
 
-The overlap query then becomes:
+The overlap query becomes a simple indexed range scan:
 
 ```sql
-WHERE bal.booking_start < :newBookingEnd
+WHERE bal.resource_type_id = :typeId
+  AND bal.booking_start < :newBookingEnd
   AND bal.booking_end > :newBookingStart
   AND bal.status != 'cancelled'
-  AND b.deleted_at IS NULL
 ```
 
-This is a simple indexed range scan. Add a composite index on `(resource_type_id, booking_start, booking_end)` and the query is fast at any realistic booking volume.
+Add a composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` in the Feature D migration. No JSON lookup per row. No join to `tee_slots` or `resource_types` in the hot path.
 
-No JSON lookup per row. No join to `tee_slots` or `resource_types` for the overlap logic. The values are immutable once written (if a booking is moved to a different slot, `bookingAddonLines` rows are deleted and re-inserted within the move transaction).
+If a booking is moved to a different tee slot, `bookingAddonLines` rows are deleted and re-inserted (with recomputed `bookingStart`/`bookingEnd`) inside the move transaction in `bookingOperations.ts`.
 
 ---
 
-## Individual Mode — Assignment and Quantity
+## Assignment — Full Specification
 
-### Quantity > 1 with Individual Mode
+### Auto Strategy
 
-When `quantity > 1` and `trackingMode = "individual"` (e.g., a booking for 4 golfers wanting 4 carts):
+The system assigns specific items immediately at booking creation.
 
-- **Pool mode:** straightforward — just check `totalUnits - allocated >= requestedQuantity × unitsConsumed`.
-- **Individual mode:** requires that `availableItemCount >= requestedQuantity × unitsConsumed`. The system holds that many units but does not assign all of them at booking time unless `assignmentMode = "auto"`.
+1. After the availability check passes (inside the same transaction), select `quantity × unitsConsumed` items from `resourceItems` where:
+   - `resourceTypeId = :typeId`
+   - `operationalStatus = 'available'`
+   - `id NOT IN (SELECT resource_item_id FROM booking_resource_assignments bra JOIN booking_addon_lines bal ON bra.booking_addon_line_id = bal.id WHERE bal.booking_start < :newEnd AND bal.booking_end > :newStart)`
+   - Order: `sortOrder ASC, id ASC`
+2. Insert `booking_resource_assignments` rows: one per selected item, `assignedBy = null`.
+3. Staff see the assignment immediately in the BookingDrawer.
 
-For `assignmentMode = "auto"`, multiple `bookingAddonLines` rows are inserted — one per unit assigned — each with a distinct `resourceItemId`. The auto-selection picks items ordered by `sortOrder ASC, id ASC` from those with `operationalStatus = "available"` and not in an active booking window.
+**Auto strategy does not guarantee the assigned item is available at tee time** if something changes after booking (e.g., the unit goes into maintenance). The maintenance-after-booking edge case is handled operationally — see Edge Cases below.
 
-For `assignmentMode = "manual"`, a single `bookingAddonLines` row is inserted with `quantity = N` and `resourceItemId = null`. Staff assign items one at a time at check-in via the BookingDrawer. The capacity check still validates that N units are available.
+### Manual Strategy
 
-### Assignment at Check-In (Manual Mode)
+The system reserves capacity at booking time but defers item assignment to staff.
 
-The `PATCH /api/bookings/:bookingId/addons/:lineId` endpoint (added in Feature D) accepts `{ resourceItemId }`. When set:
+1. At booking creation: insert `bookingAddonLines` row(s) with the quantity and computed window. No `booking_resource_assignments` rows.
+2. At any time before the tee time (typically at check-in): staff use the BookingDrawer assignment UI to select a specific item per slot.
+3. The assignment API validates the item is `operationalStatus = 'available'` and not in a conflicting active assignment window.
 
-1. Validates the item belongs to the correct resource type and club.
-2. Validates `operationalStatus = "available"`.
-3. Validates the item is not in an active booking window for another booking (using `booking_start`/`booking_end`).
-4. Sets `resourceItemId` on the line.
+**Manual strategy is the recommended default for individual-mode resources** because it gives operations staff flexibility to handle last-minute unit changes without affecting the booking.
 
-This is done without a resource type lock because it is an assignment to an already-reserved capacity slot, not a new capacity claim.
+### Assignment API Endpoints
+
+These are added in Plan 2, Feature D (where `bookingAddonLines` is defined). Documented here for completeness.
+
+| Method | Path | Min role | Notes |
+|---|---|---|---|
+| `GET` | `/api/bookings/:bookingId/addons/:lineId/assignments` | staff | List current assignments for a line |
+| `POST` | `/api/bookings/:bookingId/addons/:lineId/assignments` | staff | Assign a specific item to a slot |
+| `DELETE` | `/api/bookings/:bookingId/addons/:lineId/assignments/:assignmentId` | staff | Unassign / prepare for reassignment |
+
+`POST /assignments` body: `{ resourceItemId: string }`.
+
+Steps:
+1. Verify item belongs to the correct resource type and club.
+2. Verify `operationalStatus = 'available'`.
+3. Verify item not in a conflicting assignment window (`booking_resource_assignments JOIN booking_addon_lines` — check overlap using `bookingStart`/`bookingEnd`). Note: no resource type lock needed here because this is assignment to already-reserved capacity, not a new capacity claim.
+4. Insert `booking_resource_assignments` row with `assignedBy = req.auth.userId`.
+
+---
+
+## Edge Cases
+
+### Maintenance After Booking
+
+**Scenario:** A unit is assigned to a future booking (`assignmentStrategy = "auto"`), then later marked as `maintenance` before the tee time.
+
+**What happens:**
+- The unit's `operationalStatus` changes to `maintenance`.
+- The `booking_resource_assignments` row still exists pointing to that item.
+- The availability formula recomputes `usableUnits` excluding the now-maintenance item, which may reduce availability for new bookings.
+- The existing booking's reservation is unaffected — the capacity hold remains valid.
+- The assignment is now pointing at an unserviceable unit.
+
+**System behaviour:**
+- The Resources page and BookingDrawer surface a warning: "Unit [label] is assigned to booking [ref] but is currently in maintenance."
+- The system does NOT automatically cancel or reassign — this is an operational decision.
+- Staff use the assignment UI to delete the stale assignment and assign a different item.
+- If no alternative unit is available, staff resolve operationally (e.g., upgrade the golfer, offer a refund, note in the booking).
+
+**Why the system does not auto-reassign:** Auto-reassignment would require knowing staff priorities, golfer preferences, and operational context. It is safer to surface the conflict and let staff resolve it.
+
+**Over-allocation warning:** If maintenance causes `usableUnits - overlappingReservations < 0`, the Resources page shows a red warning banner on the affected type: "Over-allocated: X reservations exceed current usable units. Review upcoming bookings."
+
+### Assignment Conflict on Individual Items
+
+When `assignmentStrategy = "auto"` and two concurrent bookings both try to auto-assign the same item, the row lock on `resourceTypes` (from the concurrency strategy) prevents this — the second booking will either find a different available item or fail with 409 if none remain.
+
+### Booking Cancellation with Assignments
+
+When a booking with `booking_resource_assignments` rows is cancelled:
+1. `bookingAddonLines.status` is set to `"cancelled"`.
+2. `booking_resource_assignments` rows are soft-deleted (or left in place with a cancelled state — implementation choice).
+3. The cancelled lines are excluded from the overlap query (`status != 'cancelled'`), so those units become available for new reservations immediately.
 
 ---
 
@@ -307,20 +501,24 @@ CreateResourceTypeSchema
   name: string (1–100 chars)
   usageModel: "rental" | "consumable" | "service"
   trackingMode: "pool" | "individual" | null
-    -- required (non-null) when usageModel is "rental" or "service"
-    -- must be null when usageModel is "consumable"
-  assignmentMode: "auto" | "manual" | null
-    -- required when usageModel="rental" and trackingMode="individual"
-    -- must be null for pool mode and consumable
+    -- required (non-null) when usageModel = "rental" or "service"
+    -- must be null when usageModel = "consumable"
+  assignmentStrategy: "auto" | "manual" | "none"
+    -- STRICT RULES (cross-field refinement):
+    -- IF trackingMode = "pool" THEN assignmentStrategy must be "none"
+    -- IF usageModel = "consumable" THEN assignmentStrategy must be "none"
+    -- IF usageModel = "service" THEN assignmentStrategy must be "none"
+    -- IF trackingMode = "individual" THEN assignmentStrategy must be "auto" or "manual"
+    -- No other combinations are valid
   totalUnits: positive int | null
-    -- required when trackingMode is "pool"
+    -- required when trackingMode = "pool"
   trackInventory: boolean
-    -- required when usageModel is "consumable"; ignored for rental/service
+    -- required when usageModel = "consumable"; ignored for rental/service
   currentStock: non-negative int | null
-    -- required when usageModel="consumable" and trackInventory=true
+    -- required when usageModel = "consumable" and trackInventory = true
   rentalWindows: record<string, positive int> | null
-    -- required when usageModel="rental"
-    -- keys: "9hole" | "18hole" | "27hole" | "36hole" | "default"
+    -- required when usageModel = "rental"
+    -- valid keys: "9hole" | "18hole" | "27hole" | "36hole" | "default"
     -- "default" key is required
     -- values in minutes (excluding turnaround buffer)
   turnaroundBufferMinutes: non-negative int default 0
@@ -329,12 +527,15 @@ CreateResourceTypeSchema
   sortOrder: int | null
 
 PatchResourceTypeSchema
-  -- all fields optional, same cross-field constraints apply
+  -- all fields optional; same cross-field constraints apply when fields are present
+  -- changing usageModel or trackingMode must still satisfy all constraints
+  -- changing assignmentStrategy from "manual" to "auto" (or vice versa) is allowed;
+     it only affects future bookings — existing reservations and assignments are unchanged
 
 CreateResourceItemSchema
   label: string (1–100 chars)
   operationalStatus: "available" | "maintenance"
-    -- new items cannot start as retired
+    -- new items cannot start as "retired"
   maintenanceNote: string | null
   meta: record<string, unknown> | null
   sortOrder: int | null
@@ -342,54 +543,62 @@ CreateResourceItemSchema
 PatchResourceItemSchema
   -- label, operationalStatus, maintenanceNote, lastServicedAt, meta, sortOrder — all optional
   -- operationalStatus transition to "retired" is allowed; back from "retired" is not
-  -- if operationalStatus changes, a reason string is recommended (for status log)
+  -- if operationalStatus changes, a reason string is strongly recommended (written to status log)
+  reason: string | null
 
 RestockSchema
   deltaQuantity: int (non-zero; positive = restock, negative = adjustment)
   reason: string | null
+
+AssignResourceItemSchema
+  resourceItemId: uuid
 ```
 
 ---
 
 ## API Endpoints
 
-All endpoints require `authenticate` + `requireClubAccess`. Type create/update/delete require `club_admin`. Item status updates, assignments, and restocks can be performed by `staff`.
+All endpoints require `authenticate` + `requireClubAccess`. Type create/update/delete require `club_admin`. Item status updates, restocks, and assignments can be performed by `staff`.
 
 | Method | Path | Min role | Notes |
 |---|---|---|---|
 | `GET` | `/api/clubs/:clubId/resources` | staff | List all types with computed availability |
-| `POST` | `/api/clubs/:clubId/resources` | club_admin | Create resource type |
+| `POST` | `/api/clubs/:clubId/resources` | club_admin | Create resource type; enforces `assignmentStrategy` constraints |
 | `PATCH` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Update type |
-| `DELETE` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Soft-delete; blocked if active items exist |
-| `GET` | `/api/clubs/:clubId/resources/:typeId/items` | staff | List items for individual-mode type |
+| `DELETE` | `/api/clubs/:clubId/resources/:typeId` | club_admin | Soft-delete; blocked if active items or active reservations exist |
+| `GET` | `/api/clubs/:clubId/resources/:typeId/items` | staff | List items with current operational status and active assignment count |
 | `POST` | `/api/clubs/:clubId/resources/:typeId/items` | club_admin | Add item |
-| `PATCH` | `/api/clubs/:clubId/resources/:typeId/items/:itemId` | staff | Update status, note, label; writes status log |
-| `GET` | `/api/clubs/:clubId/resources/:typeId/items/:itemId/log` | staff | View status change history |
-| `POST` | `/api/clubs/:clubId/resources/:typeId/restock` | staff | Log stock change for consumable types |
+| `PATCH` | `/api/clubs/:clubId/resources/:typeId/items/:itemId` | staff | Update status, note, label; writes status log row |
+| `GET` | `/api/clubs/:clubId/resources/:typeId/items/:itemId/log` | staff | View `resourceItemStatusLog` for this item |
+| `POST` | `/api/clubs/:clubId/resources/:typeId/restock` | staff | Log consumable stock change |
 
 **`GET /resources` response shape per type:**
 
 ```jsonc
 {
   "id": "uuid",
-  "name": "Golf Carts",
+  "name": "Rental Clubs",
   "usageModel": "rental",
   "trackingMode": "individual",
-  "assignmentMode": "manual",
-  "totalUnits": 12,
-  "availableNow": 9,
-    // individual: items with operationalStatus="available"
-    //             AND not in an active booking window right now
-    // pool: totalUnits - count of active overlapping booking lines right now
+  "assignmentStrategy": "manual",
+  "totalUnits": 8,
+  "availableNow": 6,
+    // individual: COUNT(items WHERE operationalStatus='available')
+    //             MINUS overlapping reservations at this moment
+    // pool: totalUnits MINUS overlapping reservation SUM at this moment
     // consumable+trackInventory=false: null  → UI shows "Unlimited"
     // consumable+trackInventory=true: currentStock
-  "inMaintenance": 1,     // individual only: count of operationalStatus="maintenance"
-  "inUseBooked": 2,       // individual only: count currently in active booking window
+  "inMaintenance": 1,     // individual only
+  "inUseBooked": 1,       // individual only: units in an active reservation window right now
+    //                       NOTE: computed from bookingAddonLines windows, not assignments
+  "overAllocated": false, // true if usableUnits - overlappingReservations < 0
   "rentalWindows": { "9hole": 150, "18hole": 270, "default": 270 },
   "turnaroundBufferMinutes": 15,
   "active": true
 }
 ```
+
+When `overAllocated = true`, the UI renders a warning on the resource type card.
 
 ---
 
@@ -397,37 +606,36 @@ All endpoints require `authenticate` + `requireClubAccess`. Type create/update/d
 
 ### Page structure
 
-Three grouped sections: Rentals → Consumables → Services.
-
-Each section has a heading and an "Add" button pre-filling `usageModel`. A top-level "Add resource type" button opens the full form starting with the model selector.
+Three grouped sections: Rentals → Consumables → Services. Each has a heading and a section-scoped "Add" button pre-filling `usageModel`.
 
 ---
 
 ### Rental cards
 
-Each card: name, tracking mode badge, assignment mode badge, available / total count, in-maintenance count.
+Each card: name, tracking mode badge, assignment strategy badge, available / total count, in-maintenance count. If `overAllocated`, a red warning strip across the top of the card.
 
 For **individual mode**: expandable card showing each unit as a row with:
 - Label
-- Visual status: green dot (available and not booked), amber dot (booked — in active window), red dot (maintenance), grey dot (retired)
+- Visual status dot: green (available, not in active window), amber (in active reservation window), red (maintenance), grey (retired)
+- For units in an active window: shows how many reservations are active; shows assigned-to booking ref if assigned
 - Maintenance note when present
 - "Mark maintenance" / "Mark available" buttons; "Retire" in kebab menu
-- When `assignmentMode = "manual"` and unit is booked: shows which booking ref it is assigned to (if assigned)
+- If unit is assigned to a future booking and status changes to maintenance: warning badge on the item row
 
-For **pool mode**: aggregate counts + "Update capacity" inline field + "Currently allocated" read-only count.
+For **pool mode**: aggregate counts + inline "Update capacity" field + "Currently reserved" read-only count (from `bookingAddonLines` overlap query at current time).
 
 ---
 
 ### Consumable cards
 
-- `trackInventory = false`: "Unlimited — not tracked" badge. Informational note.
+- `trackInventory = false`: "Unlimited — not tracked" badge.
 - `trackInventory = true`: stock count, "Restock" button, "Adjust" option (negative delta, reason required).
 
 ---
 
 ### Service cards
 
-Display-only. Name + "Availability managed manually" notice. A note: "Scheduling for services (lessons, fittings) is a separate future feature."
+Display-only. Name + "Availability managed manually" notice.
 
 ---
 
@@ -437,19 +645,27 @@ Display-only. Name + "Availability managed manually" notice. A note: "Scheduling
 
 **Rental:**
 - Tracking mode: Pool or Individual
-- If Individual: assignment mode (Auto / Manual) with helper text explaining the difference
-- If Pool: total units
-- Rental windows: one row per slot format (hours input, converts ↔ minutes on save/load)
+- If Individual — assignment strategy radio group:
+  ```
+  How are units assigned?
+  ( ) Automatically assign units at booking time
+  ( ) Assign at check-in (staff assigns manually)
+  ```
+  Maps to `"auto"` and `"manual"`. Pool mode sets `"none"` automatically — not shown.
+- If Pool: total units field
+- Rental windows: one row per slot format (hours input, converts ↔ minutes)
   - 9-hole, 18-hole, 27-hole, 36-hole, Default (required)
-- Turnaround buffer (minutes) — labelled "Cleaning/staging buffer between rentals"
-- Helper text: "Rental window is how long the resource is reserved after a tee time starts, shown to golfers. The turnaround buffer is added on top and is invisible to golfers — it prevents back-to-back bookings without cleaning time."
+- Turnaround buffer (minutes) — "Cleaning/staging buffer between rentals"
+- Helper text: "Rental window is reserved time shown to golfers. Turnaround buffer is invisible operational padding added on top."
 
 **Consumable:**
 - Track inventory toggle
   - On: initial stock count
   - Off: "Always available — no stock check performed"
 
-**Service:** no extra fields.
+**Service:** no extra fields. Informational note: "Scheduling for services is a separate future feature."
+
+**Note:** The `assignmentStrategy` field is never shown for consumable or service types — it is set automatically to `"none"` and the user has no control over it.
 
 ---
 
@@ -467,13 +683,13 @@ Display-only. Name + "Availability managed manually" notice. A note: "Scheduling
 
 | Area | File | Change |
 |---|---|---|
-| DB schema | `packages/db/src/schema/resources.ts` | New — `resourceTypes`, `resourceItems`, `resourceItemStatusLog`, `resourceRestockLog` + relations |
+| DB schema | `packages/db/src/schema/resources.ts` | New — `resourceTypes`, `resourceItems`, `booking_resource_assignments`, `resourceItemStatusLog`, `resourceRestockLog` tables + relations |
 | DB schema index | `packages/db/src/schema/index.ts` | Export new tables |
 | DB bookings schema | `packages/db/src/schema/bookings.ts` | Add `"27hole"` and `"36hole"` to `slotType` |
 | DB slot generator | `apps/api/src/lib/slotGenerator.ts` | Add `"27hole"` and `"36hole"` to `SlotType` |
 | DB migration | `packages/db/drizzle/` | `pnpm db:generate` then `pnpm db:migrate` |
-| DB index | Migration | Add composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` — added when Feature D creates that table |
-| Validators | `packages/validators/src/resources.ts` | New file |
+| DB index (Feature D) | Migration (Plan 2 Feature D) | Composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` |
+| Validators | `packages/validators/src/resources.ts` | New file — includes `assignmentStrategy` cross-field refinements |
 | Validators index | `packages/validators/src/index.ts` | Export new schemas |
 | API routes | `apps/api/src/routes/resources.ts` | New file |
 | App mount | `apps/api/src/app.ts` | Mount resources router at `/api/clubs/:clubId` |
@@ -487,11 +703,12 @@ Display-only. Name + "Availability managed manually" notice. A note: "Scheduling
 
 | Item | Notes |
 |---|---|
-| **Service scheduling** | `service` usageModel is a placeholder. A real scheduling engine (staff calendars, booking windows per instructor/bay) is a separate system of comparable complexity to this entire plan. Do not expand this without a dedicated plan. |
-| **Pricing layer** | Resource types have no price. Pricing lives on `addonCatalog` (Plan 2, Feature D). This separation is intentional — the same resource type can back differently-priced add-ons (e.g., single-rider vs two-rider cart rental). |
-| **Dynamic/peak pricing** | Not in scope. This plan stores no pricing. Peak pricing modifiers would be a future extension on `addonCatalog`. |
-| **Resource reservations table** | For very high concurrency, replace the row lock with a `resource_reservations` table with TTL holds (Ticketmaster pattern). Not needed at golf club scale but documented as the known upgrade path. |
-| **Quantity splitting on individual mode** | When `quantity > 1` with `assignmentMode = "auto"`, multiple lines are inserted with individual item IDs. The UI for viewing and managing multi-unit assignments is handled in Plan 2, Feature D (BookingDrawer). |
+| **Service scheduling** | `service` usageModel is a placeholder. A real scheduling engine (staff calendars, per-instructor booking windows) is a separate system. Do not expand without a dedicated plan. |
+| **Pricing layer** | Resource types carry no price. Pricing lives on `addonCatalog` (Plan 2, Feature D). The same resource type can back differently-priced add-ons. |
+| **Reassignment audit trail** | Deleting and re-inserting `booking_resource_assignments` rows loses the history of who was assigned before. If audit depth is needed later, add `supersededAt` and soft-replace rather than hard-delete. |
+| **Pool mode maintenance tracking** | Pool types have no item rows, so `maintenance` units cannot be individually tracked. Staff update `totalUnits` manually when units go in or out of service. A future extension could add a `pool_maintenance_holds` table. |
+| **Resource reservations (high concurrency)** | Replace `SELECT ... FOR UPDATE` with a `resource_reservations` table with TTL holds for very high concurrency. Not needed at golf club scale. |
+| **Auto-assignment timing** | This plan assigns at booking creation time. A future variant could defer auto-assignment to N hours before the tee time to maximise flexibility, but this adds scheduling complexity. |
 
 ---
 
@@ -499,22 +716,26 @@ Display-only. Name + "Availability managed manually" notice. A note: "Scheduling
 
 | Scenario | Expected result |
 |---|---|
-| Create "Golf Carts" — individual, 12 units, 18-hole window 270 min, buffer 15 min | Page shows 12 available, 0 in maintenance |
-| Add Cart #1 through Cart #12 | Item list shows 12 green dots |
-| Mark Cart #3 as maintenance, note "Needs new front tire" | Available count drops to 11; Cart #3 shows red dot; status log records change with user and timestamp |
-| Mark Cart #3 as available | Count returns to 12; status log records return |
-| Retire Cart #12 | Count drops to 11; "Retire" action no longer available on that item |
-| View Cart #12 status log | Shows: created → available → retired with timestamps and user |
-| Create "GPS Units" — pool, 20 units | Shows "20 available"; no item list |
-| Update GPS Units total to 22 | Card updates to 22 |
-| Create "Towels" — consumable, track=false | Shows "Unlimited — not tracked" |
-| Create "Range Balls" — consumable, track=true, stock=200 | Shows "200 in stock" |
-| Restock Range Balls +50, reason "Delivery #42" | Stock becomes 250 |
-| Adjust Range Balls −10, reason "Water damaged" | Stock becomes 240; log records negative delta |
-| Create rental type: 9-hole=2.75h, 18-hole=4.5h, buffer=15min | Saved as 165/270 minutes + 15 buffer; UI shows hours on reload |
-| Create rental type with no `"default"` window key | Validation error |
-| Create consumable with trackingMode set | Validation error |
-| Attempt to hard-delete a resource type that has items | 409; soft-delete (active=false) offered instead |
-| Two concurrent requests both try to book the last cart | Only one succeeds; second gets 409 ADDON_UNAVAILABLE — row lock prevented oversell |
-| Cart is in active booking window; check Resources page | Cart shows amber "In Use (booked)" visual state; `operationalStatus` is still "available" |
-| Cart booking window expires without any action | Cart returns to green "available" on next page load — no staff action required |
+| Create resource type: `trackingMode="pool"`, `assignmentStrategy="manual"` | Validation error: pool mode requires `assignmentStrategy="none"` |
+| Create resource type: `usageModel="consumable"`, `assignmentStrategy="auto"` | Validation error: consumables require `assignmentStrategy="none"` |
+| Create resource type: `trackingMode="individual"`, `assignmentStrategy="none"` | Validation error: individual mode requires `"auto"` or `"manual"` |
+| Create valid rental type: individual, manual, 12 units, 18-hole window 270 min | Created successfully; page shows 12 available |
+| Create valid rental type: individual, auto, 8 units | Created successfully |
+| Create valid pool type: pool, `assignmentStrategy` auto-set to "none" | Created; no assignment strategy shown in UI |
+| Create consumable: `assignmentStrategy` auto-set to "none" | Created; no assignment UI shown |
+| Add items #1–12 to manual rental type | Item list shows 12 green dots |
+| Mark item #3 as maintenance | Available count drops to 11; item shows red dot; status log records change |
+| Mark item #3 as available | Count returns to 12; status log records return |
+| Retire item #12 | Count drops to 11; retired permanently |
+| View item #12 status log | Shows full history with timestamps and user |
+| Booking created with auto-strategy type, quantity 2 | Two `booking_resource_assignments` rows created; `assignedBy = null`; BookingDrawer shows both labels |
+| Booking created with manual-strategy type, quantity 2 | No assignment rows created; BookingDrawer shows 2 unassigned slots |
+| Staff assigns item #4 to unassigned slot in BookingDrawer | `booking_resource_assignments` row created with `assignedBy = staffUserId` |
+| Staff tries to assign item in maintenance | Rejected: `operationalStatus != 'available'` |
+| Item assigned to future booking goes into maintenance | Warning badge on item row; "Over-allocated" warning if usable units fall below reservations |
+| Two concurrent requests both try to book the last unit | Only one succeeds; second gets 409 ADDON_UNAVAILABLE — row lock prevented oversell |
+| Unit in active booking window; check Resources page | Shows amber dot "In Use (booked)"; `operationalStatus` remains "available" |
+| Booking window expires without any action | Unit returns to green "available" — no staff action required |
+| Create "Consumables" type, track=false | Shows "Unlimited — not tracked" |
+| Restock consumable +50 | Stock increments; log records entry |
+| Two conflicting availability values (unit in maintenance reduces usableUnits below reservations) | `overAllocated = true` in API response; red warning strip on resource card |

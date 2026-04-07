@@ -387,12 +387,11 @@ No booking add-ons exist. Clubs cannot offer or price extras (cart rental, club 
 |---|---|---|
 | `id` | uuid PK | |
 | `clubId` | uuid FK → clubs | |
-| `name` | text | "Cart Rental", "Club Hire", "F&B Package" |
+| `name` | text | "Rental Clubs", "GPS Unit", "F&B Package" |
 | `description` | text nullable | |
 | `priceCents` | int | Price in cents. 0 = free add-on. |
-| `resourceTypeId` | uuid FK → resourceTypes SET NULL nullable | Links to inventory for availability checks |
+| `resourceTypeId` | uuid FK → resourceTypes SET NULL nullable | Links to inventory for availability checks. `assignmentStrategy` on the linked type governs whether items are assigned at booking or at check-in. |
 | `unitsConsumed` | int default 1 | How many pool/individual units this add-on uses per booking |
-| `requiresAssignment` | bool default false | If true, staff must assign a specific `resourceItem` post-booking |
 | `taxable` | bool default true | |
 | `sortOrder` | int default 0 | |
 | `active` | bool default true | |
@@ -564,33 +563,33 @@ The `GET /api/bookings/:bookingId` response must be extended to include:
 ```jsonc
 "addons": [
   {
-    "id": "uuid",
-    "name": "Cart Rental",
+    "id": "uuid",                         // bookingAddonLine id
+    "name": "Rental Clubs",
     "quantity": 2,
     "unitPriceCents": 2500,
     "status": "confirmed",
-    "assignmentMode": "manual",      // from resourceType; null for non-inventory add-ons
-    "resourceItemAssignments": [
-      { "slot": 1, "resourceItemId": "uuid", "label": "Cart #4" },
-      { "slot": 2, "resourceItemId": null, "label": null }  // not yet assigned
+    "assignmentStrategy": "manual",       // from linked resourceType; null for non-inventory add-ons
+    "assignments": [                      // from booking_resource_assignments
+      { "id": "uuid", "label": "Blue Bag Set", "assignedBy": "Staff Name" },
+      { "id": null,   "label": null,       "assignedBy": null }  // slot not yet assigned
     ]
   }
 ]
 ```
 
+`assignments` has one entry per unit in `quantity`. Unassigned slots have `id = null`. The number of entries always equals `quantity`.
+
 `BookingDetail` type in `types.ts` is extended accordingly.
 
 **Assignment display rules:**
 
-- `assignmentMode = "none"` or `resourceTypeId = null`: show name + quantity only. No assignment UI.
-- `assignmentMode = "auto"`: show assigned item labels (set at booking time). No staff action needed.
-- `assignmentMode = "manual"`: show each slot as a row. Unassigned slots show a dropdown of available items from that resource type. Assigned slots show the label with a "Reassign" option.
+- `assignmentStrategy = "none"` or `resourceTypeId = null`: show name + quantity + price only. No assignment UI.
+- `assignmentStrategy = "auto"`: show assigned labels (set at booking time). No staff action needed.
+- `assignmentStrategy = "manual"`: show one row per quantity slot. Unassigned slots show a dropdown of available items. Assigned slots show the label with an "Unassign" option. Staff can reassign by unassigning then assigning a new item.
 
-**Assignment API:** `PATCH /api/bookings/:bookingId/addons/:lineId/assign` with `{ slot: int, resourceItemId: string }`. The endpoint:
-1. Validates the item belongs to the correct resource type and club.
-2. Validates `operationalStatus = "available"`.
-3. Validates the item is not in an active booking window for a different booking (overlap check against `booking_start`/`booking_end` — no lock needed here since this is an assignment to an already-reserved capacity slot, not a new capacity claim).
-4. Sets `resourceItemId` and the relevant slot assignment on the line.
+**Assignment endpoint:** `POST /api/bookings/:bookingId/addons/:lineId/assignments` with `{ resourceItemId }`. See Plan 1 Assignment API for full validation steps. No resource type lock required — this is assignment to already-reserved capacity.
+
+**Unassign endpoint:** `DELETE /api/bookings/:bookingId/addons/:lineId/assignments/:assignmentId` — removes the `booking_resource_assignments` row, returning the slot to unassigned.
 
 ### Email Extension (`BookingConfirmation.tsx`)
 
@@ -609,7 +608,7 @@ Table of catalog items: name, price, inventory link (resource type name or "—"
 
 "Add item" button opens a form:
 - Name, description, price (dollars, converted to cents), taxable toggle
-- Inventory link: optional dropdown of `resourceTypes` for this club — selecting one enables `unitsConsumed` and `requiresAssignment` fields
+- Inventory link: optional dropdown of `resourceTypes` for this club — selecting one shows the type's `assignmentStrategy` as read-only context ("Items are assigned automatically" or "Items are assigned at check-in"), and enables the `unitsConsumed` field
 - Sort order, active toggle
 
 Edit-in-place for name and price on existing rows.
@@ -626,7 +625,7 @@ Import `ShoppingBag` from `lucide-react`.
 
 | File | Change |
 |---|---|
-| `packages/db/src/schema/addons.ts` | New file — `addonCatalog` + `bookingAddonLines` tables (with `bookingStart`, `bookingEnd`, `resourceTypeId` columns) |
+| `packages/db/src/schema/addons.ts` | New file — `addonCatalog` + `bookingAddonLines` tables (with `bookingStart`, `bookingEnd`, `resourceTypeId`; no `resourceItemId` or `requiresAssignment` on the line — assignments live in `booking_resource_assignments`) |
 | `packages/db/src/schema/index.ts` | Export new tables |
 | `packages/db/drizzle/` | Generate + apply migration; includes composite index on `booking_addon_lines(resource_type_id, booking_start, booking_end)` |
 | `packages/validators/src/addons.ts` | New file |
@@ -634,13 +633,13 @@ Import `ShoppingBag` from `lucide-react`.
 | `packages/validators/src/index.ts` | Export new schemas |
 | `apps/api/src/routes/addons.ts` | New file — catalog CRUD + public endpoint |
 | `apps/api/src/app.ts` | Mount addons router |
-| `apps/api/src/routes/publicClub.ts` | Concurrency-safe availability check + addon lines in booking transaction; Stripe amount extension |
-| `apps/api/src/routes/bookingOperations.ts` | Addon lines in staff booking creation (with lock); extend GET response; add line assignment PATCH; re-insert addon lines on booking move |
+| `apps/api/src/routes/publicClub.ts` | Concurrency-safe availability check + addon lines in booking transaction; auto-assignment logic for `assignmentStrategy="auto"`; Stripe amount extension |
+| `apps/api/src/routes/bookingOperations.ts` | Addon lines in staff booking creation (with lock); extend GET response with `assignments` array; add assignment POST/DELETE endpoints; re-insert addon lines on booking move |
 | `apps/api/src/emails/BookingConfirmation.tsx` | Add-on line items section |
 | `apps/web/app/book/[slug]/confirm/page.tsx` | Add-ons stepper + running total |
 | `apps/web/components/teesheet/AddBookingModal.tsx` | Add-ons stepper |
-| `apps/web/components/teesheet/BookingDrawer.tsx` | Add-on lines section + per-slot assignment dropdown for manual mode |
-| `apps/web/components/teesheet/types.ts` | Extend `BookingDetail` with `addons` including `assignmentMode` and `resourceItemAssignments` |
+| `apps/web/components/teesheet/BookingDrawer.tsx` | Add-on lines section + per-slot assignment UI driven by `assignmentStrategy` |
+| `apps/web/components/teesheet/types.ts` | Extend `BookingDetail` with `addons` including `assignmentStrategy` and `assignments` array |
 | `apps/web/app/(club)/club/[clubId]/addons/page.tsx` | New server page |
 | `apps/web/app/(club)/club/[clubId]/addons/AddonsClient.tsx` | New client component |
 | `apps/web/components/club/Sidebar.tsx` | Add "Add-ons" nav entry |
@@ -649,16 +648,19 @@ Import `ShoppingBag` from `lucide-react`.
 
 | Scenario | Expected result |
 |---|---|
-| Create "Cart Rental" linked to "Golf Carts" resource type | Appears in public catalog; linked resource type shown |
-| Golfer selects cart rental at confirm step | Add-on total added to Stripe PaymentIntent amount |
-| Booking confirmed with cart rental | `bookingAddonLine` created with `unitPriceCents` snapshot; `bookingStart`/`bookingEnd` precomputed and stored |
-| Open BookingDrawer on booking with 1 cart (manual mode) | "Add-ons" section shows "Cart Rental ×1 $25.00" with unassigned slot and item dropdown |
-| Staff assigns Cart #4 from dropdown | `resourceItemId` set; label "Cart #4" replaces dropdown |
-| Two concurrent requests both try to book the last cart | Only one succeeds; second gets 409 `ADDON_UNAVAILABLE` — row lock prevented oversell |
-| All 12 carts held by overlapping bookings; new golfer tries to add cart | 409 `ADDON_UNAVAILABLE` |
-| Mark Cart #7 in maintenance; only 11 free | Availability drops to 11 |
-| Booking with 2 carts (auto mode) | Two `bookingAddonLine` rows created; each has distinct `resourceItemId` auto-assigned |
-| Create "Towels" with no resource link | Always available; no inventory check; no lock acquired |
+| Create "Rental Clubs" add-on linked to individual/manual resource type | Appears in public catalog; linked resource type shown |
+| Create "GPS Unit" add-on linked to pool resource type | Appears in catalog; no assignment UI since pool strategy is `"none"` |
+| Golfer selects rental clubs add-on at confirm step | Add-on total added to Stripe PaymentIntent amount |
+| Booking confirmed with rental clubs (manual strategy, qty 2) | `bookingAddonLine` created with `qty=2`, `bookingStart`/`bookingEnd` precomputed; no `booking_resource_assignments` rows yet |
+| Booking confirmed with GPS units (pool strategy, qty 2) | `bookingAddonLine` created; no assignment rows (pool mode never assigns) |
+| Booking confirmed with add-on linked to auto-strategy type (qty 2) | Two `booking_resource_assignments` rows created; `assignedBy=null`; BookingDrawer shows both labels |
+| Open BookingDrawer on manual-strategy booking with qty 2 | "Add-ons" section shows 2 unassigned slots with item dropdowns |
+| Staff assigns item from dropdown | `booking_resource_assignments` row created; slot shows label and staff name |
+| Staff unassigns item | Assignment row deleted; slot returns to dropdown state |
+| Staff tries to assign item in maintenance | Rejected: `operationalStatus != 'available'` |
+| Two concurrent requests both try to book the last unit | Only one succeeds; second gets 409 `ADDON_UNAVAILABLE` — row lock prevented oversell |
+| All units reserved by overlapping bookings; new booking tries to add the add-on | 409 `ADDON_UNAVAILABLE` |
+| Create add-on with no resource link | Always available; no inventory check; no assignment UI |
 | Confirm booking with add-ons | Email includes add-on line items section |
 | Booking is moved to a different tee slot | Old addon lines deleted; new lines inserted with recomputed `bookingStart`/`bookingEnd` |
 

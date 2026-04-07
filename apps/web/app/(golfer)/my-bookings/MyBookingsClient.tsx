@@ -48,15 +48,19 @@ function BookingCard({
   section,
   userEmail,
   onCancelled,
-  cancelWindowMessage,
+  cancelError,
   onCancelError,
 }: {
   booking: MeBookingsResponse["upcoming"][0];
   section: "upcoming" | "past";
   userEmail: string;
   onCancelled: () => void;
-  cancelWindowMessage?: string;
-  onCancelError: (bookingId: string, message: string | null) => void;
+  cancelError?: { message: string; outsideWindow?: boolean };
+  onCancelError: (
+    bookingId: string,
+    message: string | null,
+    options?: { outsideWindow?: boolean }
+  ) => void;
 }) {
   const tz = booking.teeSlot.timezone || "America/New_York";
   const { dateLabel, timeLabel } = formatSlot(booking.teeSlot.datetime, tz);
@@ -90,7 +94,8 @@ function BookingCard({
       if (delRes.status === 403 && body.code === "OUTSIDE_WINDOW") {
         onCancelError(
           booking.id,
-          "Cancellation window has passed — please contact the club."
+          "Cancellation window has passed — please contact the club.",
+          { outsideWindow: true }
         );
         return;
       }
@@ -108,10 +113,12 @@ function BookingCard({
     section === "upcoming" && booking.status !== "cancelled";
 
   const inlineCancelMsg =
-    cancelWindowMessage ??
+    cancelError?.message ??
     (!booking.isCancellable
       ? "Cancellation window has passed — please contact the club."
       : null);
+
+  const cancelBlockedByApi = cancelError?.outsideWindow === true;
 
   return (
     <div className="rounded-2xl border-[1.5px] border-ds-stone bg-white p-4 shadow-sm">
@@ -154,7 +161,9 @@ function BookingCard({
             variant="outline"
             size="sm"
             className="border-ds-stone"
-            disabled={!booking.isCancellable || busy}
+            disabled={
+              !booking.isCancellable || busy || cancelBlockedByApi
+            }
             onClick={() => void handleCancel()}
           >
             {busy ? "Cancelling…" : "Cancel"}
@@ -175,7 +184,9 @@ export default function MyBookingsClient({
   userEmail: string;
 }) {
   const [data, setData] = useState(initialData);
-  const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
+  const [cancelErrors, setCancelErrors] = useState<
+    Record<string, { message: string; outsideWindow?: boolean }>
+  >({});
 
   const refetch = useCallback(async () => {
     const res = await fetch(`${API_URL}/api/me/bookings`, {
@@ -186,14 +197,21 @@ export default function MyBookingsClient({
     setData(next);
   }, [accessToken]);
 
-  const setCancelErr = useCallback((id: string, message: string | null) => {
-    setCancelErrors((prev) => {
-      const next = { ...prev };
-      if (message === null) delete next[id];
-      else next[id] = message;
-      return next;
-    });
-  }, []);
+  const setCancelErr = useCallback(
+    (
+      id: string,
+      message: string | null,
+      options?: { outsideWindow?: boolean }
+    ) => {
+      setCancelErrors((prev) => {
+        const next = { ...prev };
+        if (message === null) delete next[id];
+        else next[id] = { message, outsideWindow: options?.outsideWindow };
+        return next;
+      });
+    },
+    []
+  );
 
   return (
     <div className="mx-auto max-w-lg px-4 pb-12 pt-10">
@@ -221,7 +239,7 @@ export default function MyBookingsClient({
                 booking={b}
                 section="upcoming"
                 userEmail={userEmail}
-                cancelWindowMessage={cancelErrors[b.id]}
+                cancelError={cancelErrors[b.id]}
                 onCancelError={setCancelErr}
                 onCancelled={() => void refetch()}
               />

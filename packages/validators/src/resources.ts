@@ -178,6 +178,7 @@ export const CreateResourceTypeSchema = z
     turnaroundBufferMinutes: z.number().int().min(0).default(0),
     notes: z.string().nullable().optional(),
     sortOrder: z.number().int().optional(),
+    active: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     refineResourceTypeCoreFields(data, ctx);
@@ -203,6 +204,7 @@ export const PatchResourceTypeSchema = z
     turnaroundBufferMinutes: z.number().int().min(0).optional(),
     notes: z.string().nullable().optional(),
     sortOrder: z.number().int().optional(),
+    active: z.boolean().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.usageModel !== undefined) {

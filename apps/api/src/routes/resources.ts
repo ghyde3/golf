@@ -104,6 +104,30 @@ async function loadItemStatsByType(
   return map;
 }
 
+async function loadPoolHoldActiveCountByType(
+  clubId: string
+): Promise<Map<string, number>> {
+  const rows = await db
+    .select({
+      resourceTypeId: poolMaintenanceHolds.resourceTypeId,
+      activeCount: sql<number>`count(*)::int`,
+    })
+    .from(poolMaintenanceHolds)
+    .where(
+      and(
+        eq(poolMaintenanceHolds.clubId, clubId),
+        isNull(poolMaintenanceHolds.resolvedAt)
+      )
+    )
+    .groupBy(poolMaintenanceHolds.resourceTypeId);
+
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    map.set(r.resourceTypeId, r.activeCount);
+  }
+  return map;
+}
+
 async function loadPoolHoldActiveUnitsByType(
   clubId: string
 ): Promise<Map<string, number>> {
@@ -181,6 +205,7 @@ router.get(
 
     const itemStats = await loadItemStatsByType(clubId);
     const poolHoldUnits = await loadPoolHoldActiveUnitsByType(clubId);
+    const poolHoldCounts = await loadPoolHoldActiveCountByType(clubId);
 
     const out = types.map((t) => {
       const items = itemStats.get(t.id);
@@ -192,6 +217,7 @@ router.get(
       let inMaintenance = 0;
       let inUseBooked = 0;
       let overAllocated = false;
+      let activeHoldsCount = 0;
 
       if (t.usageModel === "consumable") {
         totalUnits = null;
@@ -228,6 +254,7 @@ router.get(
         inMaintenance = poolMaint;
         // TODO: Plan 2 — compute from bookingAddonLines overlap
         inUseBooked = 0;
+        activeHoldsCount = poolHoldCounts.get(t.id) ?? 0;
         const usableUnits = capacity - poolMaint;
         availableNow = usableUnits - overlapping;
         overAllocated = usableUnits - overlapping < 0;
@@ -246,6 +273,10 @@ router.get(
         inMaintenance,
         inUseBooked,
         overAllocated,
+        activeHoldsCount:
+          t.usageModel === "rental" && t.trackingMode === "pool"
+            ? activeHoldsCount
+            : null,
       };
     });
 

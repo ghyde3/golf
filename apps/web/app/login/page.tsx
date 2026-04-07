@@ -31,6 +31,19 @@ export default function LoginPage({
             Server misconfiguration: set JWT_SECRET or NEXTAUTH_SECRET.
           </p>
         )}
+        {err === "unavailable" && (
+          <p className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-800">
+            Cannot reach the API server. Start it with{" "}
+            <code className="rounded bg-red-100 px-1 py-0.5 font-mono text-xs">
+              pnpm dev
+            </code>{" "}
+            from the repo root (or run{" "}
+            <code className="rounded bg-red-100 px-1 py-0.5 font-mono text-xs">
+              cd apps/api && pnpm dev
+            </code>
+            ) so it listens on port 3001.
+          </p>
+        )}
 
         <form
           className="mt-8 space-y-4 rounded-xl border border-stone bg-white p-6 shadow-sm"

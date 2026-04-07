@@ -50,6 +50,17 @@
   /* Typography fallbacks (overridden by next/font CSS variables on <html>) */
   --font-sans: var(--font-dm-sans), "DM Sans", system-ui, sans-serif;
   --font-display: var(--font-playfair), "Playfair Display", Georgia, serif;
+
+  /* Club resources / inventory UI */
+  --rental-tint: #edf5f0;
+  --inventory-tint: #fdf8ed;
+  --service-tint: #edf1f8;
+  --service-accent: #4a6a8c;
+  --inventory-hero: #7a5c0a;
+  --status-available: #4a8c5c;
+  --status-low: #b8770a;
+  --status-maintenance: #c0392b;
+  --status-unavailable: #888780;
 }
 
 /* Typography defaults — page shells set background (landing / book use --body-bg) */

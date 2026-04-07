@@ -12,6 +12,7 @@ import {
   seedClubTagAssignments,
   seedClubTagDefinitions,
 } from "./seedTags";
+import { seedInventoryForClub } from "./seedInventory";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client, { schema });
@@ -410,6 +411,8 @@ async function seed() {
   }
 
   await seedClubTagAssignments(db);
+
+  await seedInventoryForClub(db, clubId);
 
   console.log("Seed complete!");
   await client.end();

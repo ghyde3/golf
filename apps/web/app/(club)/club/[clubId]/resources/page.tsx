@@ -1,8 +1,6 @@
+import { ResourcesClient } from "./ResourcesClient";
 import { clubApi } from "@/lib/admin-api";
-import {
-  ResourcesClient,
-  type ResourceTypeRow,
-} from "./ResourcesClient";
+import type { ResourceTypeRow } from "@/lib/resource-types";
 
 export default async function ClubResourcesPage({
   params,

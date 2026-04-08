@@ -376,6 +376,11 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
 
   let guestOk = false;
   let staffOk = false;
+  let ownerOk = false;
+
+  if (auth && booking.userId && auth.userId === booking.userId) {
+    ownerOk = true;
+  }
 
   if (token) {
     try {
@@ -395,7 +400,7 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     staffOk = canAccessClub(auth.roles, club.id);
   }
 
-  if (!guestOk && !staffOk) {
+  if (!guestOk && !staffOk && !ownerOk) {
     if (!token && !auth) {
       sendUnauthorized(res);
       return;
@@ -404,7 +409,7 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     return;
   }
 
-  if (guestOk && !staffOk) {
+  if ((guestOk || ownerOk) && !staffOk) {
     const configs = await db.query.clubConfig.findMany({
       where: eq(clubConfig.clubId, club.id),
       orderBy: [desc(clubConfig.effectiveFrom)],

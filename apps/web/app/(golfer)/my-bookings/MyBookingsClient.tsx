@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import type { MeBookingsResponse } from "./page";
 
@@ -46,14 +47,14 @@ function StatusBadge({ status }: { status: string }) {
 function BookingCard({
   booking,
   section,
-  userEmail,
+  authToken,
   onCancelled,
   cancelError,
   onCancelError,
 }: {
   booking: MeBookingsResponse["upcoming"][0];
   section: "upcoming" | "past";
-  userEmail: string;
+  authToken: string | undefined;
   onCancelled: () => void;
   cancelError?: { message: string; outsideWindow?: boolean };
   onCancelError: (
@@ -67,26 +68,18 @@ function BookingCard({
   const [busy, setBusy] = useState(false);
 
   async function handleCancel() {
-    if (!userEmail.trim()) return;
+    const token = authToken?.trim();
+    if (!token) {
+      onCancelError(booking.id, "Sign in to cancel this booking.");
+      return;
+    }
     setBusy(true);
     onCancelError(booking.id, null);
     try {
-      const tokenRes = await fetch(
-        `${API_URL}/api/bookings/${booking.id}/cancel-token?email=${encodeURIComponent(userEmail)}`
-      );
-      if (!tokenRes.ok) {
-        onCancelError(booking.id, "Could not start cancellation.");
-        return;
-      }
-      const { token } = (await tokenRes.json()) as { token?: string };
-      if (!token) {
-        onCancelError(booking.id, "Could not start cancellation.");
-        return;
-      }
-      const delRes = await fetch(
-        `${API_URL}/api/bookings/${booking.id}?token=${encodeURIComponent(token)}`,
-        { method: "DELETE" }
-      );
+      const delRes = await fetch(`${API_URL}/api/bookings/${booking.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const body = (await delRes.json().catch(() => ({}))) as {
         code?: string;
         error?: string;
@@ -177,12 +170,12 @@ function BookingCard({
 export default function MyBookingsClient({
   initialData,
   accessToken,
-  userEmail,
 }: {
   initialData: MeBookingsResponse;
   accessToken: string;
-  userEmail: string;
 }) {
+  const { data: session } = useSession();
+  const authToken = session?.accessToken ?? accessToken;
   const [data, setData] = useState(initialData);
   const [cancelErrors, setCancelErrors] = useState<
     Record<string, { message: string; outsideWindow?: boolean }>
@@ -190,12 +183,12 @@ export default function MyBookingsClient({
 
   const refetch = useCallback(async () => {
     const res = await fetch(`${API_URL}/api/me/bookings`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${authToken}` },
     });
     if (!res.ok) return;
     const next = (await res.json()) as MeBookingsResponse;
     setData(next);
-  }, [accessToken]);
+  }, [authToken]);
 
   const setCancelErr = useCallback(
     (
@@ -238,7 +231,7 @@ export default function MyBookingsClient({
                 key={b.id}
                 booking={b}
                 section="upcoming"
-                userEmail={userEmail}
+                authToken={authToken}
                 cancelError={cancelErrors[b.id]}
                 onCancelError={setCancelErr}
                 onCancelled={() => void refetch()}
@@ -261,7 +254,7 @@ export default function MyBookingsClient({
                 key={b.id}
                 booking={b}
                 section="past"
-                userEmail={userEmail}
+                authToken={authToken}
                 onCancelError={setCancelErr}
                 onCancelled={() => void refetch()}
               />

@@ -48,13 +48,11 @@ export default async function MyBookingsPage() {
   }
 
   const data = (await res.json()) as MeBookingsResponse;
-  const email = session.user.email ?? "";
 
   return (
     <MyBookingsClient
       initialData={data}
       accessToken={token}
-      userEmail={email}
     />
   );
 }

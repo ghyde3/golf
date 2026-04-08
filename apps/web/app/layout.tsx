@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { auth } from "@/auth";
 import { AuthSessionProvider } from "@/components/AuthSessionProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DM_Mono, DM_Sans, Playfair_Display } from "next/font/google";
@@ -28,18 +29,19 @@ export const metadata: Metadata = {
   description: "Book golf tee times online",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const session = await auth();
   return (
     <html
       lang="en"
       className={`${dmSans.variable} ${playfair.variable} ${dmMono.variable}`}
     >
       <body className="font-sans">
-        <AuthSessionProvider>
+        <AuthSessionProvider session={session}>
           <TooltipProvider delayDuration={300}>
             {children}
             <Toaster richColors position="top-center" />

@@ -1,6 +1,14 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import {
+  Suspense,
+  useState,
+  useEffect,
+  type FormEvent,
+  type Dispatch,
+  type SetStateAction,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -51,6 +59,406 @@ function maxAddonQuantity(a: PublicAddonItem): number {
   return a.unitsConsumed === 1 ? 4 : 1;
 }
 
+type WizardStep = "details" | "addons" | "payment";
+
+const STEP_LABEL: Record<WizardStep, string> = {
+  details: "Details",
+  addons: "Add-ons",
+  payment: "Payment",
+};
+
+function StepIndicator({
+  steps,
+  stepIdx,
+}: {
+  steps: WizardStep[];
+  stepIdx: number;
+}) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-start justify-between gap-1">
+        {steps.map((step, i) => {
+          const isActive = i === stepIdx;
+          const isDone = i < stepIdx;
+          return (
+            <div key={`${step}-${i}`} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+              <div className="flex w-full items-center">
+                {i > 0 ? (
+                  <div
+                    className={`h-[2px] flex-1 rounded-full ${i <= stepIdx ? "bg-ds-grass/80" : "bg-ds-stone/60"}`}
+                    aria-hidden
+                  />
+                ) : (
+                  <div className="flex-1" aria-hidden />
+                )}
+                <div
+                  className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums transition-colors ${
+                    isDone
+                      ? "bg-ds-grass text-white"
+                      : isActive
+                        ? "bg-ds-fairway text-white"
+                        : "border-2 border-ds-stone bg-white text-ds-muted"
+                  }`}
+                  aria-current={isActive ? "step" : undefined}
+                >
+                  {isDone ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                      <path d="M20 6L9 17l-5-5" />
+                    </svg>
+                  ) : (
+                    <span>{i + 1}</span>
+                  )}
+                </div>
+                {i < steps.length - 1 ? (
+                  <div
+                    className={`h-[2px] flex-1 rounded-full ${i < stepIdx ? "bg-ds-grass/80" : "bg-ds-stone/60"}`}
+                    aria-hidden
+                  />
+                ) : (
+                  <div className="flex-1" aria-hidden />
+                )}
+              </div>
+              <p
+                className={`max-w-[5.5rem] text-center text-[10px] font-semibold uppercase tracking-[0.08em] ${
+                  isActive ? "text-ds-fairway" : isDone ? "text-ds-grass" : "text-ds-muted"
+                }`}
+              >
+                {STEP_LABEL[step]}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function StepDetails({
+  contactCompleteFromSession,
+  isAuthed,
+  sessionName,
+  sessionEmail,
+  name,
+  setName,
+  email,
+  setEmail,
+  notes,
+  setNotes,
+  onContinue,
+  detailsValid,
+}: {
+  contactCompleteFromSession: boolean;
+  isAuthed: boolean;
+  sessionName: string;
+  sessionEmail: string;
+  name: string;
+  setName: (v: string) => void;
+  email: string;
+  setEmail: (v: string) => void;
+  notes: string;
+  setNotes: (v: string) => void;
+  onContinue: () => void;
+  detailsValid: boolean;
+}) {
+  return (
+    <div className="space-y-3.5">
+      {contactCompleteFromSession ? (
+        <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">Your details</p>
+          <p className="mt-1.5 text-sm font-medium text-ds-ink">{sessionName}</p>
+          <p className="text-[13px] text-ds-muted">{sessionEmail}</p>
+          <p className="mt-2 text-[11px] leading-relaxed text-ds-muted">
+            Signed in — we&apos;ll use this name and email for the booking.
+          </p>
+        </div>
+      ) : isAuthed ? (
+        <>
+          <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">Email</p>
+            <p className="mt-1 text-sm text-ds-ink">{sessionEmail}</p>
+          </div>
+          <div>
+            <label
+              htmlFor="name"
+              className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+            >
+              Name *
+            </label>
+            <input
+              id="name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your full name"
+              className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label
+              htmlFor="name"
+              className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+            >
+              Name *
+            </label>
+            <input
+              id="name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your full name"
+              className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="email"
+              className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+            >
+              Email *
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+            />
+          </div>
+        </>
+      )}
+
+      <div>
+        <label
+          htmlFor="notes"
+          className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+        >
+          Special requests <span className="font-normal normal-case text-ds-muted/80">(optional)</span>
+        </label>
+        <textarea
+          id="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value.slice(0, 500))}
+          placeholder="Left-handed clubs, wheelchair accessible cart, etc."
+          rows={3}
+          className="h-20 w-full resize-none rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+        />
+        <p className="mt-1 text-right text-[11px] text-ds-muted">{notes.length}/500</p>
+      </div>
+
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={!detailsValid}
+        className={`relative w-full overflow-hidden rounded-[14px] py-4 text-[15px] font-semibold transition-colors after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none ${
+          !detailsValid ? "cursor-not-allowed bg-ds-stone text-ds-muted" : "bg-ds-fairway text-white"
+        }`}
+      >
+        <span className="relative z-[1]">Continue →</span>
+      </button>
+    </div>
+  );
+}
+
+function StepAddOns({
+  addonCatalog,
+  addonQty,
+  setAddonQty,
+  addonSubtotalCents,
+  onContinue,
+}: {
+  addonCatalog: PublicAddonItem[];
+  addonQty: Record<string, number>;
+  setAddonQty: Dispatch<SetStateAction<Record<string, number>>>;
+  addonSubtotalCents: number;
+  onContinue: () => void;
+}) {
+  return (
+    <div className="space-y-3.5">
+      <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">Add-ons</p>
+        <ul className="mt-3 space-y-3">
+          {addonCatalog.map((a) => {
+            const q = addonQty[a.id] ?? 0;
+            const maxQ = maxAddonQuantity(a);
+            return (
+              <li
+                key={a.id}
+                className="flex flex-col gap-1 border-b border-ds-stone/70 pb-3 last:border-0 last:pb-0"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-ds-ink">{a.name}</p>
+                    {a.description ? <p className="mt-0.5 text-[12px] text-ds-muted">{a.description}</p> : null}
+                    <p className="mt-1 text-[12px] text-ds-muted">${(a.priceCents / 100).toFixed(2)} each</p>
+                  </div>
+                  <div className="flex min-w-[100px] items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
+                      disabled={q <= 0}
+                      onClick={() =>
+                        setAddonQty((prev) => ({
+                          ...prev,
+                          [a.id]: Math.max(0, (prev[a.id] ?? 0) - 1),
+                        }))
+                      }
+                      aria-label={`Decrease ${a.name}`}
+                    >
+                      −
+                    </button>
+                    <span className="w-6 text-center text-sm tabular-nums">{q}</span>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
+                      disabled={q >= maxQ}
+                      onClick={() =>
+                        setAddonQty((prev) => ({
+                          ...prev,
+                          [a.id]: Math.min(maxQ, (prev[a.id] ?? 0) + 1),
+                        }))
+                      }
+                      aria-label={`Increase ${a.name}`}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+        {addonSubtotalCents > 0 && (
+          <p className="mt-3 text-right text-sm font-medium text-ds-ink">
+            Add-ons subtotal: ${(addonSubtotalCents / 100).toFixed(2)}
+          </p>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onContinue}
+        className="relative w-full overflow-hidden rounded-[14px] bg-ds-fairway py-4 text-[15px] font-semibold text-white transition-colors after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none"
+      >
+        <span className="relative z-[1]">Continue →</span>
+      </button>
+    </div>
+  );
+}
+
+function StepPayment({
+  players,
+  bookingFee,
+  totalFee,
+  addonCatalog,
+  addonQty,
+  addonSubtotalCents,
+  grandTotalDollars,
+  requiresPayment,
+  cardElementOptions,
+  error,
+  submitting,
+  guestEmailForBooking,
+  guestNameForBooking,
+  childrenSubmitButton,
+}: {
+  players: number;
+  bookingFee: number;
+  totalFee: number;
+  addonCatalog: PublicAddonItem[];
+  addonQty: Record<string, number>;
+  addonSubtotalCents: number;
+  grandTotalDollars: number;
+  requiresPayment: boolean;
+  cardElementOptions: {
+    style: {
+      base: Record<string, string | Record<string, string>>;
+      invalid: { color: string };
+    };
+    hidePostalCode: boolean;
+  };
+  error: string;
+  submitting: boolean;
+  guestEmailForBooking: string;
+  guestNameForBooking: string;
+  childrenSubmitButton: ReactNode;
+}) {
+  const addonLines = addonCatalog.filter((a) => (addonQty[a.id] ?? 0) > 0);
+
+  return (
+    <div className="space-y-3.5">
+      <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">Order summary</p>
+        <ul className="mt-3 space-y-2 text-sm text-ds-ink">
+          {totalFee > 0 && (
+            <li className="flex flex-wrap justify-between gap-2">
+              <span className="text-ds-muted">
+                Booking fee: ${bookingFee.toFixed(2)} × {players} player{players !== 1 ? "s" : ""}
+              </span>
+              <span className="shrink-0 font-medium tabular-nums">${totalFee.toFixed(2)}</span>
+            </li>
+          )}
+          {addonLines.map((a) => {
+            const q = addonQty[a.id] ?? 0;
+            const sub = (q * a.priceCents) / 100;
+            return (
+              <li key={a.id} className="flex flex-wrap justify-between gap-2">
+                <span className="text-ds-muted">
+                  {a.name} × {q}
+                </span>
+                <span className="shrink-0 font-medium tabular-nums">${sub.toFixed(2)}</span>
+              </li>
+            );
+          })}
+          <li className="flex flex-wrap justify-between gap-2 border-t border-ds-stone/70 pt-2 text-[15px] font-semibold">
+            <span>Total</span>
+            <span className="shrink-0 tabular-nums">${grandTotalDollars.toFixed(2)}</span>
+          </li>
+        </ul>
+      </div>
+
+      {requiresPayment && (
+        <div>
+          <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
+            Payment
+          </label>
+          <div className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3">
+            <CardElement options={cardElementOptions} />
+          </div>
+          <p className="mt-1.5 flex items-center gap-1 text-[11px] text-ds-muted">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+            Secured by Stripe
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
+          {error}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={submitting || !guestEmailForBooking || !guestNameForBooking}
+        className={`relative w-full overflow-hidden rounded-[14px] py-4 text-[15px] font-semibold transition-colors after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none ${
+          submitting || !guestEmailForBooking || !guestNameForBooking
+            ? "cursor-not-allowed bg-ds-stone text-ds-muted"
+            : "bg-ds-fairway text-white"
+        }`}
+      >
+        {childrenSubmitButton}
+      </button>
+    </div>
+  );
+}
+
 // The inner form — uses Stripe hooks, must be inside <Elements>
 function ConfirmFormInner({
   params,
@@ -95,6 +503,9 @@ function ConfirmFormInner({
   const [error, setError] = useState("");
   const [addonCatalog, setAddonCatalog] = useState<PublicAddonItem[]>([]);
   const [addonQty, setAddonQty] = useState<Record<string, number>>({});
+  const [addonCatalogLoaded, setAddonCatalogLoaded] = useState(false);
+  const [steps, setSteps] = useState<WizardStep[]>(["details", "payment"]);
+  const [stepIdx, setStepIdx] = useState(0);
 
   useEffect(() => {
     if (!isAuthed) return;
@@ -114,13 +525,28 @@ function ConfirmFormInner({
           setAddonQty((prev) => ({ ...init, ...prev }));
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setAddonCatalogLoaded(true);
+      });
     return () => {
       cancelled = true;
     };
   }, [params.slug]);
 
-  /** Values sent to the API / Stripe (session wins when signed in so we don’t wait on useState sync). */
+  useEffect(() => {
+    if (!addonCatalogLoaded) return;
+    const nextSteps: WizardStep[] =
+      addonCatalog.length > 0 ? ["details", "addons", "payment"] : ["details", "payment"];
+    setSteps((prev) => {
+      if (prev.length === 2 && nextSteps.length === 3) {
+        setStepIdx((i) => (i === 1 ? 2 : i));
+      }
+      return nextSteps;
+    });
+  }, [addonCatalogLoaded, addonCatalog.length]);
+
+  /** Values sent to the API / Stripe (session wins when signed in so we don't wait on useState sync). */
   const guestEmailForBooking = sessionEmail || email.trim();
   const guestNameForBooking = contactCompleteFromSession
     ? sessionName
@@ -161,7 +587,25 @@ function ConfirmFormInner({
       })
     : "";
 
-  async function handleSubmit(e: React.FormEvent) {
+  const currentStep = steps[stepIdx] ?? "details";
+
+  function detailsValid(): boolean {
+    if (contactCompleteFromSession) return true;
+    if (isAuthed) {
+      return Boolean(sessionEmail?.trim() && name.trim());
+    }
+    return Boolean(name.trim() && email.trim());
+  }
+
+  function goBackOrExit() {
+    if (stepIdx <= 0) {
+      router.back();
+    } else {
+      setStepIdx((i) => Math.max(0, i - 1));
+    }
+  }
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
@@ -199,7 +643,7 @@ function ConfirmFormInner({
           if (data.code === "ADDON_UNAVAILABLE") {
             setError(
               typeof data.name === "string"
-                ? `${data.name} is not available.` 
+                ? `${data.name} is not available.`
                 : "An add-on is not available."
             );
             setSubmitting(false);
@@ -372,12 +816,33 @@ function ConfirmFormInner({
     hidePostalCode: false,
   };
 
+  const submitButtonLabel =
+    submitting ? (
+      <span className="relative z-[1] flex items-center justify-center gap-2">
+        <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        {requiresPayment ? "Processing payment..." : "Reserving..."}
+      </span>
+    ) : (
+      <span className="relative z-[1]">
+        {contactCompleteFromSession
+          ? requiresPayment
+            ? `Pay $${grandTotalDollars.toFixed(2)} & confirm`
+            : "Confirm reservation"
+          : requiresPayment
+            ? `Pay $${grandTotalDollars.toFixed(2)} & Reserve`
+            : "Reserve tee time"}
+      </span>
+    );
+
   return (
     <div className="min-h-screen bg-ds-warm-white pb-10">
       <header className="sticky top-0 z-10 flex h-[52px] shrink-0 items-center gap-3 border-b border-ds-stone bg-ds-warm-white px-4">
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={goBackOrExit}
           className="flex items-center gap-1 text-[13px] font-medium text-ds-fairway"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
@@ -407,9 +872,7 @@ function ConfirmFormInner({
           {addonSubtotalCents > 0 && (
             <p className="relative mt-1.5 text-[13px] text-white/65">
               Add-ons:{" "}
-              <span className="font-semibold text-white">
-                ${(addonSubtotalCents / 100).toFixed(2)}
-              </span>
+              <span className="font-semibold text-white">${(addonSubtotalCents / 100).toFixed(2)}</span>
             </p>
           )}
           {(totalFee > 0 || addonSubtotalCents > 0) && (
@@ -422,7 +885,9 @@ function ConfirmFormInner({
           </p>
         </div>
 
-        {showGuestRegistrationBanner && (
+        <StepIndicator steps={steps} stepIdx={stepIdx} />
+
+        {currentStep === "details" && showGuestRegistrationBanner && (
           <div className="mb-4 flex gap-2.5 rounded-[10px] border border-ds-fairway/25 bg-ds-fairway/[0.06] px-3.5 py-3 text-xs leading-relaxed text-ds-muted">
             <span className="mt-0.5 shrink-0 text-ds-fairway" aria-hidden>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -453,222 +918,60 @@ function ConfirmFormInner({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3.5">
-          {contactCompleteFromSession ? (
-            <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-                Your details
-              </p>
-              <p className="mt-1.5 text-sm font-medium text-ds-ink">{sessionName}</p>
-              <p className="text-[13px] text-ds-muted">{sessionEmail}</p>
-              <p className="mt-2 text-[11px] leading-relaxed text-ds-muted">
-                Signed in — we&apos;ll use this name and email for the booking.
-              </p>
-            </div>
-          ) : isAuthed ? (
-            <>
-              <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-                  Email
-                </p>
-                <p className="mt-1 text-sm text-ds-ink">{sessionEmail}</p>
-              </div>
-              <div>
-                <label
-                  htmlFor="name"
-                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
-                >
-                  Name *
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
-                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <label
-                  htmlFor="name"
-                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
-                >
-                  Name *
-                </label>
-                <input
-                  id="name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Your full name"
-                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
-                />
-              </div>
+        {currentStep === "details" && (
+          <StepDetails
+            contactCompleteFromSession={contactCompleteFromSession}
+            isAuthed={isAuthed}
+            sessionName={sessionName}
+            sessionEmail={sessionEmail}
+            name={name}
+            setName={setName}
+            email={email}
+            setEmail={setEmail}
+            notes={notes}
+            setNotes={setNotes}
+            detailsValid={detailsValid()}
+            onContinue={() => {
+              if (!detailsValid()) return;
+              setStepIdx((i) => Math.min(steps.length - 1, i + 1));
+            }}
+          />
+        )}
 
-              <div>
-                <label
-                  htmlFor="email"
-                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
-                >
-                  Email *
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
-                />
-              </div>
-            </>
-          )}
+        {currentStep === "addons" && (
+          <StepAddOns
+            addonCatalog={addonCatalog}
+            addonQty={addonQty}
+            setAddonQty={setAddonQty}
+            addonSubtotalCents={addonSubtotalCents}
+            onContinue={() => setStepIdx((i) => Math.min(steps.length - 1, i + 1))}
+          />
+        )}
 
-          {addonCatalog.length > 0 && (
-            <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-                Add-ons
-              </p>
-              <ul className="mt-3 space-y-3">
-                {addonCatalog.map((a) => {
-                  const q = addonQty[a.id] ?? 0;
-                  const maxQ = maxAddonQuantity(a);
-                  return (
-                    <li key={a.id} className="flex flex-col gap-1 border-b border-ds-stone/70 pb-3 last:border-0 last:pb-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-medium text-ds-ink">{a.name}</p>
-                          {a.description ? (
-                            <p className="mt-0.5 text-[12px] text-ds-muted">{a.description}</p>
-                          ) : null}
-                          <p className="mt-1 text-[12px] text-ds-muted">
-                            ${(a.priceCents / 100).toFixed(2)} each
-                          </p>
-                        </div>
-                        <div className="flex min-w-[100px] items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
-                            disabled={q <= 0}
-                            onClick={() =>
-                              setAddonQty((prev) => ({
-                                ...prev,
-                                [a.id]: Math.max(0, (prev[a.id] ?? 0) - 1),
-                              }))
-                            }
-                            aria-label={`Decrease ${a.name}`}
-                          >
-                            −
-                          </button>
-                          <span className="w-6 text-center text-sm tabular-nums">{q}</span>
-                          <button
-                            type="button"
-                            className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
-                            disabled={q >= maxQ}
-                            onClick={() =>
-                              setAddonQty((prev) => ({
-                                ...prev,
-                                [a.id]: Math.min(maxQ, (prev[a.id] ?? 0) + 1),
-                              }))
-                            }
-                            aria-label={`Increase ${a.name}`}
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              {addonSubtotalCents > 0 && (
-                <p className="mt-3 text-right text-sm font-medium text-ds-ink">
-                  Add-ons subtotal: ${(addonSubtotalCents / 100).toFixed(2)}
-                </p>
-              )}
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="notes" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-              Special requests <span className="font-normal normal-case text-ds-muted/80">(optional)</span>
-            </label>
-            <textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value.slice(0, 500))}
-              placeholder="Left-handed clubs, wheelchair accessible cart, etc."
-              rows={3}
-              className="h-20 w-full resize-none rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+        {currentStep === "payment" && (
+          <form onSubmit={handleSubmit} className="space-y-3.5">
+            <StepPayment
+              players={players}
+              bookingFee={bookingFee}
+              totalFee={totalFee}
+              addonCatalog={addonCatalog}
+              addonQty={addonQty}
+              addonSubtotalCents={addonSubtotalCents}
+              grandTotalDollars={grandTotalDollars}
+              requiresPayment={requiresPayment}
+              cardElementOptions={cardElementOptions}
+              error={error}
+              submitting={submitting}
+              guestEmailForBooking={guestEmailForBooking}
+              guestNameForBooking={guestNameForBooking}
+              childrenSubmitButton={submitButtonLabel}
             />
-            <p className="mt-1 text-right text-[11px] text-ds-muted">{notes.length}/500</p>
-          </div>
-
-          {requiresPayment && (
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-                Payment
-              </label>
-              <div className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3">
-                <CardElement options={cardElementOptions} />
-              </div>
-              <p className="mt-1.5 flex items-center gap-1 text-[11px] text-ds-muted">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0110 0v4" />
-                </svg>
-                Secured by Stripe
-              </p>
-            </div>
-          )}
-
-          {error && (
-            <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800" role="alert">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={submitting || !guestEmailForBooking || !guestNameForBooking}
-            className={`relative w-full overflow-hidden rounded-[14px] py-4 text-[15px] font-semibold transition-colors after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none ${
-              submitting || !guestEmailForBooking || !guestNameForBooking
-                ? "cursor-not-allowed bg-ds-stone text-ds-muted"
-                : "bg-ds-fairway text-white"
-            }`}
-          >
-            {submitting ? (
-              <span className="relative z-[1] flex items-center justify-center gap-2">
-                <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                {requiresPayment ? "Processing payment..." : "Reserving..."}
-              </span>
-            ) : (
-              <span className="relative z-[1]">
-                {contactCompleteFromSession
-                  ? requiresPayment
-                    ? `Pay $${grandTotalDollars.toFixed(2)} & confirm`
-                    : "Confirm reservation"
-                  : requiresPayment
-                    ? `Pay $${grandTotalDollars.toFixed(2)} & Reserve`
-                    : "Reserve tee time"}
-              </span>
-            )}
-          </button>
-        </form>
+          </form>
+        )}
 
         <button
           type="button"
-          onClick={() => router.back()}
+          onClick={goBackOrExit}
           className="mt-4 w-full text-center text-[13px] text-ds-muted underline decoration-transparent hover:decoration-ds-muted"
         >
           Back to tee times

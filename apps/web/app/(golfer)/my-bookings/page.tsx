@@ -18,6 +18,9 @@ export type MeBookingItem = {
   playersCount: number;
   createdAt: string;
   isCancellable: boolean;
+  /** Green fee (current club rate × players) + add-on lines from booking. */
+  totalCents: number;
+  paymentStatus: string;
   teeSlot: MeBookingTeeSlot;
 };
 

@@ -24,6 +24,11 @@ export class AddOnUnavailableError extends Error {
 
 type DbTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
+/** postgres.js binds string params only; Date breaks Buffer.byteLength in the wire encoder. */
+function tsParam(d: Date): string {
+  return d.toISOString();
+}
+
 export type TeeSlotLike = {
   id: string;
   datetime: Date;
@@ -51,8 +56,8 @@ async function sumOverlappingReservations(
   const filters = [
     eq(bookingAddonLines.resourceTypeId, resourceTypeId),
     ne(bookingAddonLines.status, "cancelled"),
-    sql`${bookingAddonLines.bookingStart} < ${newEnd}`,
-    sql`${bookingAddonLines.bookingEnd} > ${newStart}`,
+    sql`${bookingAddonLines.bookingStart} < ${tsParam(newEnd)}`,
+    sql`${bookingAddonLines.bookingEnd} > ${tsParam(newStart)}`,
     isNull(bookings.deletedAt),
   ];
   if (excludeBookingId) {
@@ -394,8 +399,8 @@ async function insertAutoAssignmentsForLine(
         eq(bookingAddonLines.resourceTypeId, resourceTypeId),
         ne(bookingAddonLines.status, "cancelled"),
         isNull(bookingResourceAssignments.supersededAt),
-        sql`${bookingAddonLines.bookingStart} < ${bookingEnd}`,
-        sql`${bookingAddonLines.bookingEnd} > ${bookingStart}`
+        sql`${bookingAddonLines.bookingStart} < ${tsParam(bookingEnd)}`,
+        sql`${bookingAddonLines.bookingEnd} > ${tsParam(bookingStart)}`
       )
     );
 

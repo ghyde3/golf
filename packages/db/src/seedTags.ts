@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import * as schema from "./schema";
+import * as schema from "./schema/index";
 import { clubTagAssignments, clubTagDefinitions } from "./schema/clubTags";
 import { clubs } from "./schema/clubs";
 import { eq } from "drizzle-orm";

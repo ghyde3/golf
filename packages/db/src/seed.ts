@@ -4,10 +4,10 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { clubs, clubConfig, courses, teeSlots } from "./schema";
-import { users, userRoles } from "./schema";
+import { clubs, clubConfig, courses, teeSlots } from "./schema/index";
+import { users, userRoles } from "./schema/index";
 import { and, asc, eq, inArray } from "drizzle-orm";
-import * as schema from "./schema";
+import * as schema from "./schema/index";
 import {
   seedClubTagAssignments,
   seedClubTagDefinitions,

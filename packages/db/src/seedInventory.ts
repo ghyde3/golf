@@ -5,7 +5,7 @@ dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { and, eq, isNull } from "drizzle-orm";
-import * as schema from "./schema";
+import * as schema from "./schema/index";
 import {
   clubs,
   resourceTypes,
@@ -14,7 +14,7 @@ import {
   poolMaintenanceHolds,
   users,
   userRoles,
-} from "./schema";
+} from "./schema/index";
 
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 

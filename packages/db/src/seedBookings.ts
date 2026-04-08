@@ -7,7 +7,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { eq, inArray, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema";
+import * as schema from "./schema/index";
 import {
   clubs,
   courses,
@@ -15,7 +15,7 @@ import {
   clubConfig,
   bookings,
   bookingPlayers,
-} from "./schema";
+} from "./schema/index";
 import { resolveConfig, resolveHours } from "./seed/configResolverForSeed";
 import { generateSlots } from "./seed/slotGenForSeed";
 

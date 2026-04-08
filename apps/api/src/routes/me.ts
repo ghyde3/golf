@@ -18,6 +18,7 @@ import {
   courses,
   clubs,
   clubConfig,
+  bookingAddonLines,
 } from "@teetimes/db";
 import { MeBookingsQuerySchema } from "@teetimes/validators";
 import { authenticate } from "../middleware/auth";
@@ -165,6 +166,22 @@ router.get("/bookings", authenticate, async (req, res) => {
     }
   }
 
+  const bookingIds = [...upcomingRows, ...pastRows].map((r) => r.booking.id);
+  const addonCentsByBooking = new Map<string, number>();
+  if (bookingIds.length > 0) {
+    const addonAgg = await db
+      .select({
+        bookingId: bookingAddonLines.bookingId,
+        cents: sql<number>`coalesce(sum(${bookingAddonLines.unitPriceCents} * ${bookingAddonLines.quantity}), 0)::int`,
+      })
+      .from(bookingAddonLines)
+      .where(inArray(bookingAddonLines.bookingId, bookingIds))
+      .groupBy(bookingAddonLines.bookingId);
+    for (const row of addonAgg) {
+      addonCentsByBooking.set(row.bookingId, Number(row.cents));
+    }
+  }
+
   function mapRow(
     row: (typeof upcomingRows)[0],
     section: "upcoming" | "past"
@@ -185,6 +202,11 @@ router.get("/bookings", authenticate, async (req, res) => {
       booking.status === "confirmed" &&
       isCancellable(teeSlot.datetime, hours);
 
+    const bookingFee = parseFloat(String(club.bookingFee ?? "0"));
+    const greenFeeCents = Math.round(bookingFee * booking.playersCount * 100);
+    const addonCents = addonCentsByBooking.get(booking.id) ?? 0;
+    const totalCents = greenFeeCents + addonCents;
+
     return {
       id: booking.id,
       bookingRef: booking.bookingRef,
@@ -192,6 +214,8 @@ router.get("/bookings", authenticate, async (req, res) => {
       playersCount: booking.playersCount,
       createdAt: booking.createdAt?.toISOString() ?? new Date().toISOString(),
       isCancellable: cancellable,
+      paymentStatus: booking.paymentStatus ?? "unpaid",
+      totalCents,
       teeSlot: {
         datetime: teeSlot.datetime.toISOString(),
         courseName: course.name,

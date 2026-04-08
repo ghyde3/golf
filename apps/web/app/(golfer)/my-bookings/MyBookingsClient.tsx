@@ -44,6 +44,40 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function formatUsd(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function PaymentBadge({ paymentStatus }: { paymentStatus: string }) {
+  const s = paymentStatus.toLowerCase();
+  if (s === "paid") {
+    return (
+      <span className="inline-flex rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-900">
+        Paid
+      </span>
+    );
+  }
+  if (s === "pending_payment") {
+    return (
+      <span className="inline-flex rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-900">
+        Pending payment
+      </span>
+    );
+  }
+  if (s === "failed") {
+    return (
+      <span className="inline-flex rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">
+        Payment failed
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex rounded-md bg-stone-50 px-2 py-0.5 text-xs font-medium text-stone-600">
+      Unpaid
+    </span>
+  );
+}
+
 function BookingCard({
   booking,
   section,
@@ -65,6 +99,8 @@ function BookingCard({
 }) {
   const tz = booking.teeSlot.timezone || "America/New_York";
   const { dateLabel, timeLabel } = formatSlot(booking.teeSlot.datetime, tz);
+  const paymentStatus = booking.paymentStatus ?? "unpaid";
+  const totalCents = booking.totalCents ?? 0;
   const [busy, setBusy] = useState(false);
 
   async function handleCancel() {
@@ -143,6 +179,24 @@ function BookingCard({
           </span>{" "}
           <span className="font-mono text-ds-ink">{booking.bookingRef}</span>
         </span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-ds-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ds-gold">
+            Payment
+          </span>
+          <PaymentBadge paymentStatus={paymentStatus} />
+        </span>
+        {totalCents > 0 ? (
+          <span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-ds-gold">
+              Total
+            </span>{" "}
+            <span className="font-medium text-ds-ink">{formatUsd(totalCents)}</span>
+          </span>
+        ) : (
+          <span className="text-[12px] text-ds-muted">No charge</span>
+        )}
       </div>
       {showCancelRow && (
         <div className="mt-4">

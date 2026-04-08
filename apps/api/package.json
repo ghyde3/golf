@@ -3,9 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "predev": "test -f ../../packages/db/dist/index.js || pnpm --filter @teetimes/db build",
+    "predev": "(test -f ../../packages/db/dist/index.js && test -f ../../packages/validators/dist/index.js) || (pnpm --filter @teetimes/db build && pnpm --filter @teetimes/validators build)",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "pnpm --filter @teetimes/db build && tsc",
+    "build": "pnpm --filter @teetimes/db build && pnpm --filter @teetimes/validators build && tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

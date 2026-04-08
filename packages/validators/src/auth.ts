@@ -7,6 +7,12 @@ export const LoginSchema = z.object({
 
 export type LoginInput = z.infer<typeof LoginSchema>;
 
+export const RegisterSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  password: z.string().min(8).max(72),
+});
+
 export const PlatformClubStatusSchema = z.object({
   status: z.enum(["active", "suspended"]),
 });

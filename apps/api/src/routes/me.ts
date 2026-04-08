@@ -252,6 +252,7 @@ router.get("/profile", authenticate, async (req, res) => {
       email: true,
       phone: true,
       notificationPrefs: true,
+      createdAt: true,
     },
   });
   if (!user) {
@@ -263,6 +264,7 @@ router.get("/profile", authenticate, async (req, res) => {
     name: user.name,
     email: user.email,
     phone: user.phone ?? null,
+    createdAt: user.createdAt?.toISOString() ?? null,
     notificationPrefs:
       (user.notificationPrefs as { reminders?: boolean } | null) ?? null,
   });
@@ -305,12 +307,14 @@ router.patch("/profile", authenticate, async (req, res) => {
       email: users.email,
       phone: users.phone,
       notificationPrefs: users.notificationPrefs,
+      createdAt: users.createdAt,
     });
 
   res.json({
     name: updated.name,
     email: updated.email,
     phone: updated.phone ?? null,
+    createdAt: updated.createdAt?.toISOString() ?? null,
     notificationPrefs:
       (updated.notificationPrefs as { reminders?: boolean } | null) ?? null,
   });

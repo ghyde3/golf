@@ -8,7 +8,7 @@ export default async function GolferLayout({
 }) {
   const session = await auth();
   if (!session?.user) {
-    redirect("/login?redirect=/my-bookings");
+    redirect("/login?redirect=/account");
   }
 
   return (

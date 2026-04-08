@@ -149,13 +149,14 @@ function SuccessContent({ params }: { params: { slug: string } }) {
             datetimeIso={datetime}
             timezone={timezone}
             playersCount={Number(players)}
+            className="px-4 py-2 text-sm font-medium"
           />
         </div>
       )}
 
       {sessionStatus === "authenticated" && session && (
         <Link
-          href="/my-bookings"
+          href="/account#bookings"
           className="mt-4 block w-full max-w-md text-center text-[15px] font-semibold text-ds-fairway underline-offset-4 hover:underline"
         >
           View my bookings →

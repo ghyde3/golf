@@ -1,0 +1,582 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  .page {
+    font-family: 'DM Sans', sans-serif;
+    background: #F6F4EF;
+    min-height: 100vh;
+    padding: 0 0 60px;
+    color: #1a1a18;
+  }
+
+  .topbar {
+    background: #1C2B1E;
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .topbar-logo {
+    font-family: 'DM Serif Display', serif;
+    color: #C9B97A;
+    font-size: 20px;
+    letter-spacing: 0.02em;
+  }
+
+  .topbar-nav {
+    font-size: 13px;
+    color: #9DB09E;
+    display: flex;
+    gap: 24px;
+  }
+
+  .topbar-nav span { cursor: pointer; }
+  .topbar-nav span.active { color: #C9B97A; }
+
+  .hero-band {
+    background: #1C2B1E;
+    padding: 28px 28px 48px;
+  }
+
+  .hero-eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #C9B97A;
+    margin-bottom: 10px;
+    font-weight: 400;
+  }
+
+  .hero-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 38px;
+    color: #F6F4EF;
+    line-height: 1.1;
+  }
+
+  .hero-sub {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #7A9A7C;
+    font-weight: 300;
+  }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: #2D4030;
+    border-top: 1px solid #2D4030;
+    margin-top: 28px;
+  }
+
+  .stat-cell {
+    background: #1C2B1E;
+    padding: 16px 20px;
+    text-align: center;
+  }
+
+  .stat-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 26px;
+    color: #C9B97A;
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    color: #7A9A7C;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  .content {
+    padding: 0 20px;
+    margin-top: -20px;
+  }
+
+  .section-label {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #7A6B3A;
+    font-weight: 500;
+    margin: 28px 0 12px;
+  }
+
+  .card {
+    background: #FDFCF8;
+    border-radius: 14px;
+    border: 1px solid #E2DDD0;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+
+  .booking-card {
+    padding: 18px 20px;
+    position: relative;
+  }
+
+  .booking-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .booking-date {
+    font-family: 'DM Serif Display', serif;
+    font-size: 17px;
+    color: #1C2B1E;
+    line-height: 1.2;
+  }
+
+  .booking-date-sub {
+    font-size: 12px;
+    color: #8C8678;
+    margin-top: 2px;
+    font-weight: 300;
+  }
+
+  .status-pill {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.04em;
+  }
+
+  .status-confirmed {
+    background: #E8F2E9;
+    color: #2D6B30;
+  }
+
+  .course-name {
+    font-size: 13px;
+    color: #5A5448;
+    margin-bottom: 14px;
+    font-weight: 300;
+  }
+
+  .meta-row {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .meta-key {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #B0A590;
+  }
+
+  .meta-val {
+    font-size: 13px;
+    color: #2C2C2A;
+    font-weight: 500;
+  }
+
+  .meta-val.paid { color: #2D6B30; }
+  .meta-val.ref { font-family: monospace; font-size: 12px; color: #5A5448; }
+
+  .divider { height: 1px; background: #EDE9E0; margin: 14px 0; }
+
+  .action-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1px solid #D5CFC4;
+    background: #FDFCF8;
+    color: #3A3830;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    transition: background 0.15s;
+  }
+
+  .btn:hover { background: #F0EDE5; }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    color: #A89F8C;
+    font-size: 12px;
+    padding: 7px 0;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  .warning-strip {
+    background: #FDF5E8;
+    border-top: 1px solid #EFE0BC;
+    padding: 10px 20px;
+    font-size: 12px;
+    color: #8A6D2F;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .warning-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #C9B97A;
+    flex-shrink: 0;
+  }
+
+  .score-badge {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    background: #1C2B1E;
+    border-radius: 8px;
+    padding: 6px 12px;
+  }
+
+  .score-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: #C9B97A;
+  }
+
+  .score-holes {
+    font-size: 11px;
+    color: #7A9A7C;
+  }
+
+  .score-history-card {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .score-history-left .sh-date {
+    font-size: 13px;
+    color: #1C2B1E;
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+
+  .score-history-left .sh-course {
+    font-size: 12px;
+    color: #8C8678;
+    font-weight: 300;
+  }
+
+  .profile-card { padding: 20px; }
+
+  .profile-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #1C2B1E;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 18px;
+    color: #C9B97A;
+    margin-bottom: 16px;
+  }
+
+  .form-row { margin-bottom: 14px; }
+
+  .form-label {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #B0A590;
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  .form-input {
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 14px;
+    color: #1C2B1E;
+    background: #F6F4EF;
+    border: 1px solid #DDD9CE;
+    border-radius: 8px;
+    padding: 10px 13px;
+    outline: none;
+  }
+
+  .form-input:focus { border-color: #7A9A7C; }
+
+  .form-input.readonly {
+    color: #8C8678;
+    background: #F0EDE5;
+    cursor: default;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+    font-size: 13px;
+    color: #5A5448;
+    cursor: pointer;
+  }
+
+  .checkbox-box {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid #C5BFB2;
+    flex-shrink: 0;
+    background: #FDFCF8;
+  }
+
+  .btn-primary {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    background: #1C2B1E;
+    color: #C9B97A;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    width: 100%;
+  }
+
+  .back-link {
+    font-size: 13px;
+    color: #8C8678;
+    margin: 6px 0 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .past-label {
+    font-size: 11px;
+    color: #B0A590;
+    font-style: italic;
+    margin-left: auto;
+    font-weight: 300;
+  }
+
+  .upcoming-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4A9B4E;
+    display: inline-block;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+</style>
+
+<div class="page">
+  <div class="topbar">
+    <div class="topbar-logo">PinebrookGC</div>
+    <div class="topbar-nav">
+      <span>Book</span>
+      <span class="active">Account</span>
+    </div>
+  </div>
+
+  <div class="hero-band">
+    <div class="hero-eyebrow">Golfer Profile</div>
+    <div class="hero-name">Gary Hyde</div>
+    <div class="hero-sub">ghyde03@gmail.com &nbsp;·&nbsp; Member since 2024</div>
+
+    <div class="stats-row">
+      <div class="stat-cell">
+        <div class="stat-num">3</div>
+        <div class="stat-label">Rounds played</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">61</div>
+        <div class="stat-label">Best score</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">1</div>
+        <div class="stat-label">Upcoming</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <div class="section-label"><span class="upcoming-indicator"></span>Upcoming tee times</div>
+
+    <div class="card">
+      <div class="booking-card">
+        <div class="booking-header">
+          <div>
+            <div class="booking-date">Thu, Apr 9, 2026 &nbsp;·&nbsp; 6:00 AM</div>
+            <div class="booking-date-sub">The Championship &nbsp;·&nbsp; Pinebrook Golf Club</div>
+          </div>
+          <div class="status-pill status-confirmed">Confirmed</div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item">
+            <div class="meta-key">Players</div>
+            <div class="meta-val">2</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Reference</div>
+            <div class="meta-val ref">PINE-ZLGVN8</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Payment</div>
+            <div class="meta-val">Unpaid &nbsp;·&nbsp; No charge</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn">+ Add to calendar</button>
+          <button class="btn-ghost">Cancel booking</button>
+        </div>
+      </div>
+      <div class="warning-strip">
+        <div class="warning-dot"></div>
+        Cancellation window has passed — please contact the club directly.
+      </div>
+    </div>
+
+    <div class="section-label">Past rounds</div>
+
+    <div class="card">
+      <div class="booking-card">
+        <div class="booking-header">
+          <div>
+            <div class="booking-date">Wed, Apr 8, 2026 &nbsp;·&nbsp; 7:00 AM</div>
+            <div class="booking-date-sub">The Championship &nbsp;·&nbsp; Pinebrook Golf Club</div>
+          </div>
+          <div class="status-pill status-confirmed">Confirmed</div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item">
+            <div class="meta-key">Players</div>
+            <div class="meta-val">2</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Reference</div>
+            <div class="meta-val ref">PINE-5XKH34</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Total</div>
+            <div class="meta-val">$19.99</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Payment</div>
+            <div class="meta-val paid">Paid</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn">+ Add to calendar</button>
+          <button class="btn">Edit score</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="booking-card">
+        <div class="booking-header">
+          <div>
+            <div class="booking-date">Wed, Apr 8, 2026 &nbsp;·&nbsp; 6:30 AM</div>
+            <div class="booking-date-sub">The Championship &nbsp;·&nbsp; Pinebrook Golf Club</div>
+          </div>
+          <div class="status-pill status-confirmed">Confirmed</div>
+        </div>
+        <div class="meta-row">
+          <div class="meta-item">
+            <div class="meta-key">Players</div>
+            <div class="meta-val">2</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Reference</div>
+            <div class="meta-val ref">PINE-ZWQ4NS</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Total</div>
+            <div class="meta-val">$19.99</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-key">Payment</div>
+            <div class="meta-val paid">Paid</div>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn">+ Add to calendar</button>
+          <button class="btn">Log score</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Score history</div>
+
+    <div class="card">
+      <div class="score-history-card">
+        <div class="score-history-left">
+          <div class="sh-date">Wed, Apr 8, 2026</div>
+          <div class="sh-course">The Championship &nbsp;·&nbsp; Pinebrook Golf Club</div>
+        </div>
+        <div class="score-badge">
+          <div class="score-num">61</div>
+          <div class="score-holes">/ 18 holes</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Profile</div>
+
+    <div class="card">
+      <div class="profile-card">
+        <div class="profile-avatar">GH</div>
+
+        <div class="form-row">
+          <label class="form-label">Name</label>
+          <input class="form-input" type="text" value="Gary Hyde" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Phone (optional)</label>
+          <input class="form-input" type="text" placeholder="e.g. +1 555-0100" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Email</label>
+          <input class="form-input readonly" type="text" value="ghyde03@gmail.com" readonly />
+        </div>
+
+        <div class="checkbox-row">
+          <div class="checkbox-box"></div>
+          Email reminders before tee times
+        </div>
+
+        <button class="btn-primary">Save changes</button>
+      </div>
+    </div>
+
+    <div class="back-link">↑ Back to top</div>
+  </div>
+</div>

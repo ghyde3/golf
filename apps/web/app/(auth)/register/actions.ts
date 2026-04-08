@@ -69,5 +69,5 @@ export async function registerAction(formData: FormData) {
     redirect("/register?error=unavailable");
   }
 
-  redirect(nextPath ?? "/my-bookings");
+  redirect(nextPath ?? "/account?section=bookings");
 }

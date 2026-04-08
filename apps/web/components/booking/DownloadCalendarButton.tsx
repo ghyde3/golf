@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import ical from "ical-generator";
+import { cn } from "@/lib/utils";
 
 interface Props {
   bookingRef: string;
@@ -10,6 +11,10 @@ interface Props {
   datetimeIso: string;
   timezone: string;
   playersCount: number;
+  className?: string;
+  label?: string;
+  /** When true, prefixes the label with "+ " (account / reference design). */
+  leadingPlus?: boolean;
 }
 
 export function DownloadCalendarButton({
@@ -19,6 +24,9 @@ export function DownloadCalendarButton({
   datetimeIso,
   timezone,
   playersCount,
+  className,
+  label = "Add to calendar",
+  leadingPlus = false,
 }: Props) {
   const download = useCallback(() => {
     const start = new Date(datetimeIso);
@@ -51,9 +59,13 @@ export function DownloadCalendarButton({
     <button
       type="button"
       onClick={download}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-ds-stone bg-white px-4 py-2 text-sm font-medium text-ds-ink hover:bg-ds-cream/60"
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg border border-ds-stone bg-ds-warm-white px-3.5 py-1.5 text-xs font-semibold text-ds-ink transition-colors hover:bg-ds-cream",
+        className
+      )}
     >
-      Add to calendar
+      {leadingPlus ? "+ " : null}
+      {label}
     </button>
   );
 }

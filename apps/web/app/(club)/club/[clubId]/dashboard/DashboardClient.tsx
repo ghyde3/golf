@@ -21,7 +21,7 @@ import type { TeeSlotRow } from "@/components/teesheet/types";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 type Summary = {
@@ -49,9 +49,37 @@ type CourseUtil = {
   total: number;
 };
 
+function Sparkline({ series }: { series: { bookings: number }[] }) {
+  if (series.length < 2) return null;
+  const max = Math.max(1, ...series.map((s) => s.bookings));
+  const w = 56,
+    h = 24,
+    pad = 2;
+  const pts = series
+    .map((s, i) => {
+      const x = pad + (i / (series.length - 1)) * (w - pad * 2);
+      const y = h - pad - (s.bookings / max) * (h - pad * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <svg width={w} height={h} className="opacity-60">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function DashboardClient({
   clubId,
   dateStr,
+  sparklineSeries,
   summary,
   stats,
   courseUtils,
@@ -60,6 +88,7 @@ export function DashboardClient({
 }: {
   clubId: string;
   dateStr: string;
+  sparklineSeries: { date: string; bookings: number }[];
   summary: Summary;
   stats: DashboardStats;
   courseUtils: CourseUtil[];
@@ -119,6 +148,13 @@ export function DashboardClient({
             label="Booked today"
             value={summary.bookingsToday}
             borderClass="border-t-grass"
+            footer={
+              sparklineSeries.length >= 2 ? (
+                <div className="mt-1 text-fairway">
+                  <Sparkline series={sparklineSeries} />
+                </div>
+              ) : null
+            }
           />
           <StatCard
             label="Utilisation"
@@ -379,10 +415,12 @@ function StatCard({
   label,
   value,
   borderClass,
+  footer,
 }: {
   label: string;
   value: string | number;
   borderClass: string;
+  footer?: ReactNode;
 }) {
   return (
     <div
@@ -395,6 +433,7 @@ function StatCard({
         {label}
       </p>
       <p className="mt-2 font-display text-3xl text-ink">{value}</p>
+      {footer}
     </div>
   );
 }

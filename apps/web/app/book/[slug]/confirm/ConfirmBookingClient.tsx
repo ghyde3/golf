@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   Elements,
@@ -12,6 +13,14 @@ import {
 } from "@stripe/react-stripe-js";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
+function jsonHeaders(accessToken?: string | null): HeadersInit {
+  const h: Record<string, string> = { "Content-Type": "application/json" };
+  if (accessToken?.trim()) {
+    h.Authorization = `Bearer ${accessToken.trim()}`;
+  }
+  return h;
+}
 
 const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
@@ -42,6 +51,14 @@ function ConfirmFormInner({
   const router = useRouter();
   const stripe = useStripe();
   const elements = useElements();
+  const { data: session, status: sessionStatus } = useSession();
+
+  const accessToken = session?.accessToken;
+  const sessionEmail = session?.user?.email?.trim() ?? "";
+  const sessionName = session?.user?.name?.trim() ?? "";
+  const isAuthed = sessionStatus === "authenticated" && Boolean(sessionEmail);
+  /** Logged-in user with name + email from account — only notes / payment left */
+  const contactCompleteFromSession = isAuthed && Boolean(sessionName) && Boolean(sessionEmail);
 
   const clubId = searchParams.get("clubId") || "";
   const courseId = searchParams.get("courseId") || "";
@@ -56,6 +73,21 @@ function ConfirmFormInner({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!isAuthed) return;
+    if (sessionEmail) setEmail(sessionEmail);
+    if (sessionName) setName(sessionName);
+  }, [isAuthed, sessionEmail, sessionName]);
+
+  /** Values sent to the API / Stripe (session wins when signed in so we don’t wait on useState sync). */
+  const guestEmailForBooking =
+    sessionStatus === "authenticated" && sessionEmail ? sessionEmail : email.trim();
+  const guestNameForBooking = contactCompleteFromSession
+    ? sessionName
+    : sessionStatus === "authenticated"
+      ? sessionName || name.trim()
+      : name.trim();
 
   const players = Number(playersParam);
 
@@ -87,8 +119,8 @@ function ConfirmFormInner({
         // Step 1: Create PaymentIntent + reserve slot
         const piBody: Record<string, unknown> = {
           playersCount: players,
-          guestName: name,
-          guestEmail: email,
+          guestName: guestNameForBooking,
+          guestEmail: guestEmailForBooking,
           notes: notes || undefined,
           clubSlug: params.slug,
         };
@@ -101,7 +133,7 @@ function ConfirmFormInner({
 
         const piRes = await fetch(`${API_URL}/api/bookings/public/payment-intent`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonHeaders(accessToken),
           body: JSON.stringify(piBody),
         });
 
@@ -140,7 +172,10 @@ function ConfirmFormInner({
             {
               payment_method: {
                 card: cardElement,
-                billing_details: { name, email },
+                billing_details: {
+                  name: guestNameForBooking,
+                  email: guestEmailForBooking,
+                },
               },
             }
           );
@@ -160,7 +195,7 @@ function ConfirmFormInner({
           // Step 3: Confirm payment server-side
           const confirmRes = await fetch(`${API_URL}/api/bookings/public/confirm-payment`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: jsonHeaders(accessToken),
             body: JSON.stringify({
               bookingId: piData.bookingId,
               paymentIntentId: paymentIntent.id,
@@ -178,8 +213,8 @@ function ConfirmFormInner({
             bookingRef: confirmed.bookingRef ?? piData.bookingRef,
             datetime: confirmed.datetime ?? piData.datetime,
             players: String(players),
-            guestName: name,
-            guestEmail: email,
+            guestName: guestNameForBooking,
+            guestEmail: guestEmailForBooking,
             amountPaid: (totalFee).toFixed(2),
           });
           router.push(`/book/${params.slug}/success?${q.toString()}`);
@@ -190,8 +225,8 @@ function ConfirmFormInner({
       // Zero-fee path (unchanged from original)
       const body: Record<string, unknown> = {
         playersCount: players,
-        guestName: name,
-        guestEmail: email,
+        guestName: guestNameForBooking,
+        guestEmail: guestEmailForBooking,
         notes: notes || undefined,
         clubSlug: params.slug,
       };
@@ -204,7 +239,7 @@ function ConfirmFormInner({
 
       const res = await fetch(`${API_URL}/api/bookings/public`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonHeaders(accessToken),
         body: JSON.stringify(body),
       });
 
@@ -224,8 +259,8 @@ function ConfirmFormInner({
         bookingRef: booking.bookingRef,
         datetime: booking.datetime,
         players: String(players),
-        guestName: name,
-        guestEmail: email,
+        guestName: guestNameForBooking,
+        guestEmail: guestEmailForBooking,
       });
       router.push(`/book/${params.slug}/success?${q.toString()}`);
     } catch {
@@ -260,7 +295,9 @@ function ConfirmFormInner({
           </svg>
           Back
         </button>
-        <h1 className="font-display text-base text-ds-ink">Confirm booking</h1>
+        <h1 className="font-display text-base text-ds-ink">
+          {contactCompleteFromSession ? "Confirm your tee time" : "Confirm booking"}
+        </h1>
       </header>
 
       <div className="mx-auto max-w-lg px-4 pt-5">
@@ -314,35 +351,82 @@ function ConfirmFormInner({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          <div>
-            <label htmlFor="name" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-              Name *
-            </label>
-            <input
-              id="name"
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your full name"
-              className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
-            />
-          </div>
+          {contactCompleteFromSession ? (
+            <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
+                Your details
+              </p>
+              <p className="mt-1.5 text-sm font-medium text-ds-ink">{sessionName}</p>
+              <p className="text-[13px] text-ds-muted">{sessionEmail}</p>
+              <p className="mt-2 text-[11px] leading-relaxed text-ds-muted">
+                Signed in — we&apos;ll use this name and email for the booking.
+              </p>
+            </div>
+          ) : isAuthed ? (
+            <>
+              <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
+                  Email
+                </p>
+                <p className="mt-1 text-sm text-ds-ink">{sessionEmail}</p>
+              </div>
+              <div>
+                <label
+                  htmlFor="name"
+                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+                >
+                  Name *
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label
+                  htmlFor="name"
+                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+                >
+                  Name *
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Your full name"
+                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+                />
+              </div>
 
-          <div>
-            <label htmlFor="email" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
-              Email *
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
-            />
-          </div>
+              <div>
+                <label
+                  htmlFor="email"
+                  className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted"
+                >
+                  Email *
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  className="w-full rounded-[10px] border-[1.5px] border-ds-stone bg-white px-3.5 py-3 text-sm text-ds-ink outline-none focus:border-ds-grass"
+                />
+              </div>
+            </>
+          )}
 
           <div>
             <label htmlFor="notes" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
@@ -385,9 +469,9 @@ function ConfirmFormInner({
 
           <button
             type="submit"
-            disabled={submitting || !name || !email}
+            disabled={submitting || !guestEmailForBooking || !guestNameForBooking}
             className={`relative w-full overflow-hidden rounded-[14px] py-4 text-[15px] font-semibold transition-colors after:absolute after:inset-0 after:bg-gradient-to-br after:from-white/10 after:to-transparent after:pointer-events-none ${
-              submitting || !name || !email
+              submitting || !guestEmailForBooking || !guestNameForBooking
                 ? "cursor-not-allowed bg-ds-stone text-ds-muted"
                 : "bg-ds-fairway text-white"
             }`}
@@ -401,7 +485,15 @@ function ConfirmFormInner({
                 {requiresPayment ? "Processing payment..." : "Reserving..."}
               </span>
             ) : (
-              <span className="relative z-[1]">{requiresPayment ? `Pay $${totalFee.toFixed(2)} & Reserve` : "Reserve tee time"}</span>
+              <span className="relative z-[1]">
+                {contactCompleteFromSession
+                  ? requiresPayment
+                    ? `Pay $${totalFee.toFixed(2)} & confirm`
+                    : "Confirm reservation"
+                  : requiresPayment
+                    ? `Pay $${totalFee.toFixed(2)} & Reserve`
+                    : "Reserve tee time"}
+              </span>
             )}
           </button>
         </form>

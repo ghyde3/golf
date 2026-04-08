@@ -10,3 +10,4 @@ export * from "./announcements";
 export * from "./resources";
 export * from "./addons";
 export * from "./waitlist";
+export * from "./scorecards";

@@ -46,6 +46,28 @@ export const courses = pgTable("courses", {
   holes: integer("holes").notNull().default(18),
 });
 
+export const courseHoles = pgTable(
+  "course_holes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    courseId: uuid("course_id")
+      .references(() => courses.id, { onDelete: "cascade" })
+      .notNull(),
+    holeNumber: integer("hole_number").notNull(),
+    par: integer("par").notNull(),
+    handicapIndex: integer("handicap_index"),
+    yardage: integer("yardage"),
+  },
+  (table) => [unique().on(table.courseId, table.holeNumber)]
+);
+
+export const courseHolesRelations = relations(courseHoles, ({ one }) => ({
+  course: one(courses, {
+    fields: [courseHoles.courseId],
+    references: [courses.id],
+  }),
+}));
+
 export const clubsRelations = relations(clubs, ({ many }) => ({
   configs: many(clubConfig),
   courses: many(courses),
@@ -56,6 +78,7 @@ export const clubConfigRelations = relations(clubConfig, ({ one }) => ({
   club: one(clubs, { fields: [clubConfig.clubId], references: [clubs.id] }),
 }));
 
-export const coursesRelations = relations(courses, ({ one }) => ({
+export const coursesRelations = relations(courses, ({ one, many }) => ({
   club: one(clubs, { fields: [courses.clubId], references: [clubs.id] }),
+  holes: many(courseHoles),
 }));

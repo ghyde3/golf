@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   timestamp,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { clubs } from "./clubs";
@@ -12,6 +13,8 @@ export const users = pgTable("users", {
   email: text("email").unique().notNull(),
   passwordHash: text("password_hash"),
   name: text("name"),
+  phone: text("phone"),
+  notificationPrefs: jsonb("notification_prefs"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });

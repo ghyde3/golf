@@ -57,3 +57,19 @@ export function verifyInviteToken(token: string): { userId: string } {
   }
   return { userId: p.userId };
 }
+
+export function signPasswordResetToken(userId: string): string {
+  return jwt.sign(
+    { type: "password_reset", userId },
+    getSecret(),
+    { expiresIn: "1h" }
+  );
+}
+
+export function verifyPasswordResetToken(token: string): { userId: string } {
+  const p = jwt.verify(token, getSecret()) as { type?: string; userId?: string };
+  if (p.type !== "password_reset" || !p.userId) {
+    throw new Error("Invalid reset token");
+  }
+  return { userId: p.userId };
+}

@@ -4,12 +4,13 @@ import Redis from "ioredis";
 import { render } from "@react-email/render";
 import { sendEmail } from "../lib/email";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { db, failedJobs, bookings, clubConfig, waitlistEntries } from "@teetimes/db";
+import { db, failedJobs, bookings, clubConfig, waitlistEntries, users } from "@teetimes/db";
 import { formatInTimeZone } from "date-fns-tz";
 import { BookingConfirmationEmail } from "../emails/BookingConfirmation";
 import { BookingReminderEmail } from "../emails/BookingReminder";
 import { BookingCancellationEmail } from "../emails/BookingCancellation";
 import { WaitlistNotifyEmail } from "../emails/WaitlistNotify";
+import { PasswordResetEmail } from "../emails/PasswordReset";
 
 function bullConnection(): Redis {
   return new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: null });
@@ -129,6 +130,26 @@ async function sendWaitlistNotifyEmail(waitlistEntryId: string): Promise<void> {
     );
 }
 
+async function sendPasswordResetEmail(userId: string, token: string): Promise<void> {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+  if (!user) return;
+  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
+  const html = await render(
+    React.createElement(PasswordResetEmail, {
+      resetUrl,
+      userName: user.name ?? undefined,
+    })
+  );
+  await sendEmail({
+    to: user.email,
+    subject: "Reset your TeeTimes password",
+    html,
+  });
+}
+
 async function sendReminderEmail(bookingId: string): Promise<void> {
   const booking = await db.query.bookings.findFirst({
     where: eq(bookings.id, bookingId),
@@ -191,6 +212,13 @@ async function processJob(
   }
   if (name === "email:waitlist-notify") {
     await sendWaitlistNotifyEmail(String(data.waitlistEntryId ?? ""));
+    return;
+  }
+  if (name === "email:password-reset") {
+    const uid = String(data.userId ?? "");
+    const token = String(data.token ?? "");
+    if (!uid || !token) return;
+    await sendPasswordResetEmail(uid, token);
     return;
   }
   if (name === "email:booking-cancellation") {

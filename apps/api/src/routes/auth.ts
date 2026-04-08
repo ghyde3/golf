@@ -3,15 +3,19 @@ import bcrypt from "bcrypt";
 import { eq, and, isNull, inArray, asc } from "drizzle-orm";
 import { db, users, clubs, userRoles } from "@teetimes/db";
 import { LoginSchema, RegisterSchema, SetPasswordSchema } from "@teetimes/validators";
-import { signToken } from "../lib/jwt";
+import {
+  signToken,
+  verifyInviteToken,
+  signPasswordResetToken,
+  verifyPasswordResetToken,
+} from "../lib/jwt";
+import { enqueueEmail } from "../lib/queue";
 import { publicRateLimit } from "../middleware/rateLimit";
 import {
   getAuthPayload,
   sendUnauthorized,
   hasPlatformAdmin,
 } from "../lib/auth";
-import { verifyInviteToken } from "../lib/jwt";
-
 const router = Router();
 
 router.post("/set-password", async (req, res) => {
@@ -23,7 +27,12 @@ router.post("/set-password", async (req, res) => {
     return;
   }
   try {
-    const { userId } = verifyInviteToken(parsed.data.token);
+    let userId: string;
+    try {
+      ({ userId } = verifyPasswordResetToken(parsed.data.token));
+    } catch {
+      ({ userId } = verifyInviteToken(parsed.data.token));
+    }
     const hash = await bcrypt.hash(parsed.data.password, 10);
     const [updated] = await db
       .update(users)
@@ -38,6 +47,23 @@ router.post("/set-password", async (req, res) => {
   } catch {
     res.status(400).json({ error: "Invalid or expired token" });
   }
+});
+
+router.post("/forgot-password", publicRateLimit, async (req, res) => {
+  const parsed = LoginSchema.pick({ email: true }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+  const email = parsed.data.email.toLowerCase().trim();
+  const user = await db.query.users.findFirst({
+    where: and(eq(users.email, email), isNull(users.deletedAt)),
+  });
+  if (user) {
+    const token = signPasswordResetToken(user.id);
+    await enqueueEmail("email:password-reset", { userId: user.id, token });
+  }
+  res.json({ ok: true });
 });
 
 router.post("/login", async (req, res) => {

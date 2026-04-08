@@ -38,4 +38,10 @@ describe("Public API invariants", () => {
     const res = await request(app).patch("/api/me/profile").send({ name: "Test" });
     expect(res.status).toBe(401);
   });
+
+  it("GET /api/clubs/:clubId/courses/:courseId/holes returns 401 without auth", async () => {
+    const res = await request(app)
+      .get("/api/clubs/00000000-0000-0000-0000-000000000001/courses/00000000-0000-0000-0000-000000000002/holes");
+    expect(res.status).toBe(401);
+  });
 });

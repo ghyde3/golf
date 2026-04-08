@@ -2,6 +2,7 @@ export * from "./auth";
 export * from "./clubs";
 export * from "./clubTags";
 export * from "./courses";
+export * from "./holes";
 export * from "./bookings";
 export * from "./platform-settings";
 export * from "./announcements";

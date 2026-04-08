@@ -10,6 +10,7 @@ import {
   db,
   clubs,
   clubConfig,
+  courseHoles,
   courses,
   teeSlots,
   users,
@@ -23,6 +24,7 @@ import {
   ClubTagSlugsPutSchema,
   CourseSchema,
   CoursePatchSchema,
+  HoleUpsertSchema,
   StaffInviteSchema,
   TeeSheetBlockSchema,
 } from "@teetimes/validators";
@@ -338,6 +340,75 @@ router.patch(
     });
   }
 );
+
+router.put("/courses/:courseId/holes", async (req, res) => {
+  const clubId = clubParams(req).clubId;
+  const courseId = req.params.courseId;
+
+  const course = await db.query.courses.findFirst({
+    where: and(eq(courses.id, courseId), eq(courses.clubId, clubId)),
+    columns: { id: true, holes: true },
+  });
+  if (!course) {
+    res.status(404).json({ error: "Course not found" });
+    return;
+  }
+
+  const parsed = HoleUpsertSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+    return;
+  }
+
+  const holeNumbers = parsed.data.map((h) => h.holeNumber);
+  const maxHole = Math.max(...holeNumbers);
+  if (maxHole > course.holes) {
+    res.status(400).json({
+      error: `Hole number ${maxHole} exceeds course length (${course.holes} holes)`,
+    });
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select({ holeNumber: courseHoles.holeNumber })
+      .from(courseHoles)
+      .where(eq(courseHoles.courseId, courseId));
+    const existingNums = existing.map((h) => h.holeNumber);
+    const toDelete = existingNums.filter((n) => !holeNumbers.includes(n));
+    if (toDelete.length > 0) {
+      await tx.delete(courseHoles).where(
+        and(eq(courseHoles.courseId, courseId), inArray(courseHoles.holeNumber, toDelete))
+      );
+    }
+    for (const hole of parsed.data) {
+      await tx
+        .insert(courseHoles)
+        .values({
+          courseId,
+          holeNumber: hole.holeNumber,
+          par: hole.par,
+          handicapIndex: hole.handicapIndex ?? null,
+          yardage: hole.yardage ?? null,
+        })
+        .onConflictDoUpdate({
+          target: [courseHoles.courseId, courseHoles.holeNumber],
+          set: {
+            par: hole.par,
+            handicapIndex: hole.handicapIndex ?? null,
+            yardage: hole.yardage ?? null,
+          },
+        });
+    }
+  });
+
+  const updated = await db
+    .select()
+    .from(courseHoles)
+    .where(eq(courseHoles.courseId, courseId))
+    .orderBy(asc(courseHoles.holeNumber));
+  res.json(updated);
+});
 
 router.get("/courses/:courseId/teesheet", async (req, res) => {
   const { clubId, courseId: cid } = clubParams(req);

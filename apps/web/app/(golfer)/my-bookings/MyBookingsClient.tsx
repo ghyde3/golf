@@ -4,6 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { useSession } from "next-auth/react";
+import { ModifyBookingModal } from "@/components/golfer/ModifyBookingModal";
 import { ScorecardEntryModal } from "@/components/golfer/ScorecardEntryModal";
 import { Button } from "@/components/ui/button";
 import type { MeBookingsResponse, ScorecardItem } from "./page";
@@ -93,6 +94,7 @@ function BookingCard({
   section,
   authToken,
   onCancelled,
+  onModified,
   cancelError,
   onCancelError,
   scorecard,
@@ -102,6 +104,7 @@ function BookingCard({
   section: "upcoming" | "past";
   authToken: string | undefined;
   onCancelled: () => void;
+  onModified: () => void;
   cancelError?: { message: string; outsideWindow?: boolean };
   onCancelError: (
     bookingId: string,
@@ -227,18 +230,46 @@ function BookingCard({
           {inlineCancelMsg && (
             <p className="mb-2 text-sm text-amber-800">{inlineCancelMsg}</p>
           )}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-ds-stone"
-            disabled={
-              !booking.isCancellable || busy || cancelBlockedByApi
-            }
-            onClick={() => void handleCancel()}
-          >
-            {busy ? "Cancelling…" : "Cancel"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {booking.isCancellable ? (
+              <ModifyBookingModal
+                booking={{
+                  id: booking.id,
+                  bookingRef: booking.bookingRef,
+                  playersCount: booking.playersCount,
+                  teeSlot: {
+                    datetime: booking.teeSlot.datetime,
+                    courseName: booking.teeSlot.courseName,
+                    clubName: booking.teeSlot.clubName,
+                  },
+                }}
+                accessToken={authToken ?? ""}
+                onModified={onModified}
+                trigger={
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-ds-fairway text-ds-fairway hover:bg-ds-fairway/10"
+                  >
+                    Modify
+                  </Button>
+                }
+              />
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-ds-stone"
+              disabled={
+                !booking.isCancellable || busy || cancelBlockedByApi
+              }
+              onClick={() => void handleCancel()}
+            >
+              {busy ? "Cancelling…" : "Cancel"}
+            </Button>
+          </div>
         </div>
       )}
       {section === "past" && booking.teeSlot.courseId ? (
@@ -358,6 +389,7 @@ export default function MyBookingsClient({
                 cancelError={cancelErrors[b.id]}
                 onCancelError={setCancelErr}
                 onCancelled={() => void refetch()}
+                onModified={() => void refetch()}
                 onScorecardSaved={() => void refetchScorecards()}
               />
             ))
@@ -385,6 +417,7 @@ export default function MyBookingsClient({
                   authToken={authToken}
                   onCancelError={setCancelErr}
                   onCancelled={() => void refetch()}
+                  onModified={() => void refetch()}
                   scorecard={sc}
                   onScorecardSaved={() => void refetchScorecards()}
                 />

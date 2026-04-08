@@ -44,4 +44,11 @@ describe("Public API invariants", () => {
       .get("/api/clubs/00000000-0000-0000-0000-000000000001/courses/00000000-0000-0000-0000-000000000002/holes");
     expect(res.status).toBe(401);
   });
+
+  it("PATCH /api/bookings/:id returns 401 without auth", async () => {
+    const res = await request(app)
+      .patch("/api/bookings/00000000-0000-0000-0000-000000000001")
+      .send({ playersCount: 2 });
+    expect(res.status).toBe(401);
+  });
 });

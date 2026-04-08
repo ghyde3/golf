@@ -7,9 +7,10 @@ import { loginAction } from "./actions";
 export default function LoginPage({
   searchParams,
 }: {
-  searchParams: { error?: string; redirect?: string };
+  searchParams: { error?: string; redirect?: string; message?: string };
 }) {
   const err = searchParams.error;
+  const message = searchParams.message;
   const redirectTo = searchParams.redirect ?? "";
 
   return (
@@ -32,6 +33,12 @@ export default function LoginPage({
             Server misconfiguration: set JWT_SECRET or NEXTAUTH_SECRET.
           </p>
         )}
+        {message === "password_reset" && (
+          <p className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-sm text-emerald-900">
+            Your password was reset. Sign in with your new password.
+          </p>
+        )}
+
         {err === "unavailable" && (
           <p className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-800">
             Cannot reach the API server. Start it with{" "}
@@ -82,6 +89,14 @@ export default function LoginPage({
               required
               autoComplete="current-password"
             />
+            <p className="mt-2 text-right text-sm">
+              <Link
+                href="/forgot-password"
+                className="font-medium text-fairway underline-offset-4 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </p>
           </div>
           <Button type="submit" className="w-full">
             Sign in
@@ -100,6 +115,16 @@ export default function LoginPage({
             className="font-medium text-fairway underline-offset-4 hover:underline"
           >
             Back to public site
+          </Link>
+        </p>
+
+        <p className="mt-6 text-center text-sm text-muted">
+          New golfer?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-fairway underline-offset-4 hover:underline"
+          >
+            Create an account →
           </Link>
         </p>
       </div>

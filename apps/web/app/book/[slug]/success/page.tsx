@@ -139,6 +139,14 @@ function SuccessContent({ params }: { params: { slug: string } }) {
           View my bookings →
         </Link>
       )}
+      {sessionStatus === "unauthenticated" && (
+        <Link
+          href="/register"
+          className="mt-4 block w-full max-w-md text-center text-[15px] font-semibold text-ds-fairway underline-offset-4 hover:underline"
+        >
+          Create an account to manage your bookings →
+        </Link>
+      )}
     </div>
   );
 }

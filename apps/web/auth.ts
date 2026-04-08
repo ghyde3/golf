@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import type { UserRole } from "@teetimes/types";
+import authConfig from "./auth.config";
 
 function apiBase(): string {
   return (
@@ -10,19 +11,8 @@ function apiBase(): string {
   );
 }
 
-function authSecret(): string | undefined {
-  return (
-    process.env.AUTH_SECRET ??
-    process.env.NEXTAUTH_SECRET ??
-    undefined
-  );
-}
-
-const secret = authSecret();
-
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  trustHost: true,
-  ...(secret ? { secret } : {}),
+  ...authConfig,
   providers: [
     Credentials({
       name: "credentials",
@@ -78,32 +68,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  session: {
-    strategy: "jwt",
-    maxAge: 60 * 60 * 24 * 7,
-  },
-  pages: {
-    signIn: "/login",
-  },
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        const u = user as {
-          roles?: UserRole[];
-          accessToken?: string;
-        };
-        token.roles = u.roles;
-        token.accessToken = u.accessToken;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub ?? "";
-        session.user.roles = (token.roles as UserRole[]) ?? [];
-      }
-      session.accessToken = token.accessToken as string;
-      return session;
-    },
-  },
 });

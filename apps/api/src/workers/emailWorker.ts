@@ -1,8 +1,8 @@
 import * as React from "react";
 import { Worker } from "bullmq";
 import Redis from "ioredis";
-import { Resend } from "resend";
 import { render } from "@react-email/render";
+import { sendEmail } from "../lib/email";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { db, failedJobs, bookings, clubConfig, waitlistEntries } from "@teetimes/db";
 import { formatInTimeZone } from "date-fns-tz";
@@ -58,16 +58,7 @@ async function sendConfirmationEmail(bookingId: string): Promise<void> {
     })
   );
 
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    console.info("[email] skip send (no RESEND_API_KEY)", { to, ref });
-    return;
-  }
-
-  const resend = new Resend(key);
-  const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
-  await resend.emails.send({
-    from,
+  await sendEmail({
     to,
     subject: `Tee time confirmed — ${ref}`,
     html,
@@ -120,23 +111,15 @@ async function sendWaitlistNotifyEmail(waitlistEntryId: string): Promise<void> {
     })
   );
 
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    console.info("[email] skip waitlist notify (no RESEND_API_KEY)", {
-      to,
-      waitlistEntryId,
-    });
-    return;
-  }
-
-  const resend = new Resend(key);
-  const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
-  await resend.emails.send({
-    from,
+  await sendEmail({
     to,
     subject: `A spot opened — ${club.name}`,
     html,
   });
+
+  if (!process.env.RESEND_API_KEY) {
+    return;
+  }
 
   await db
     .update(waitlistEntries)
@@ -187,16 +170,7 @@ async function sendReminderEmail(bookingId: string): Promise<void> {
     })
   );
 
-  const key = process.env.RESEND_API_KEY;
-  if (!key) {
-    console.info("[email] skip reminder (no RESEND_API_KEY)", { to, ref });
-    return;
-  }
-
-  const resend = new Resend(key);
-  const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
-  await resend.emails.send({
-    from,
+  await sendEmail({
     to,
     subject: `Reminder: ${ref} at ${club.name}`,
     html,
@@ -225,21 +199,13 @@ async function processJob(
     const whenLabel =
       typeof data.whenLabel === "string" ? data.whenLabel : undefined;
     if (!to) return;
-    const key = process.env.RESEND_API_KEY;
-    if (!key) {
-      console.info("[email] skip cancellation (no RESEND_API_KEY)", { to });
-      return;
-    }
     const html = await render(
       React.createElement(BookingCancellationEmail, {
         clubName,
         whenLabel,
       })
     );
-    const resend = new Resend(key);
-    const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
-    await resend.emails.send({
-      from,
+    await sendEmail({
       to,
       subject: "Booking cancelled",
       html,
@@ -250,16 +216,8 @@ async function processJob(
     const to = String(data.email ?? "");
     const token = String(data.token ?? "");
     if (!to || !token) return;
-    const key = process.env.RESEND_API_KEY;
-    if (!key) {
-      console.info("[email] skip invite (no RESEND_API_KEY)", { to });
-      return;
-    }
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const resend = new Resend(key);
-    const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
-    await resend.emails.send({
-      from,
+    await sendEmail({
       to,
       subject: "You're invited to TeeTimes",
       html: `<p>Set your password: <a href="${baseUrl}/set-password?token=${encodeURIComponent(token)}">Complete setup</a></p>`,

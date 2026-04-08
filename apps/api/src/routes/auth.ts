@@ -1,9 +1,10 @@
 import { Router } from "express";
 import bcrypt from "bcrypt";
 import { eq, and, isNull, inArray, asc } from "drizzle-orm";
-import { db, users, clubs } from "@teetimes/db";
-import { LoginSchema, SetPasswordSchema } from "@teetimes/validators";
+import { db, users, clubs, userRoles } from "@teetimes/db";
+import { LoginSchema, RegisterSchema, SetPasswordSchema } from "@teetimes/validators";
 import { signToken } from "../lib/jwt";
+import { publicRateLimit } from "../middleware/rateLimit";
 import {
   getAuthPayload,
   sendUnauthorized,
@@ -79,6 +80,63 @@ router.post("/login", async (req, res) => {
       roles,
     },
   });
+});
+
+router.post("/register", publicRateLimit, async (req, res) => {
+  const parsed = RegisterSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+
+  const email = parsed.data.email.toLowerCase().trim();
+  const { name, password } = parsed.data;
+
+  const existing = await db.query.users.findFirst({
+    where: and(eq(users.email, email), isNull(users.deletedAt)),
+  });
+  if (existing) {
+    res.status(409).json({ code: "EMAIL_TAKEN" });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+  const roles: { role: "golfer"; clubId: null }[] = [
+    { role: "golfer", clubId: null },
+  ];
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [u] = await tx
+        .insert(users)
+        .values({ email, name, passwordHash })
+        .returning();
+      if (!u) {
+        throw new Error("User insert failed");
+      }
+      await tx.insert(userRoles).values({
+        userId: u.id,
+        role: "golfer",
+        clubId: null,
+      });
+      return u;
+    });
+
+    const token = signToken({ userId: result.id, roles });
+
+    res.status(201).json({
+      token,
+      user: {
+        id: result.id,
+        email: result.email,
+        name: result.name,
+        roles,
+      },
+    });
+  } catch (e) {
+    console.error("Register:", e);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/me", (req, res) => {

@@ -159,7 +159,15 @@ router.post("/register", publicRateLimit, async (req, res) => {
         roles,
       },
     });
-  } catch (e) {
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (
+      err.code === "23505" ||
+      (typeof err.message === "string" && err.message.toLowerCase().includes("unique"))
+    ) {
+      res.status(409).json({ code: "EMAIL_TAKEN" });
+      return;
+    }
     console.error("Register:", e);
     res.status(500).json({ error: "Internal server error" });
   }

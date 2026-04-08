@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CourseHolesEditor } from "@/components/club/CourseHolesEditor";
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
 
 export type CourseRow = { id: string; name: string; holes: number };
@@ -261,21 +262,23 @@ export function CoursesClient({
               </div>
               <div className="divide-y divide-stone">
                 {courses.map((c) => (
-                  <div
-                    key={c.id}
-                    className="grid grid-cols-[minmax(0,1fr)_80px_80px] items-center px-4 py-3"
-                  >
-                    <span className="truncate text-sm font-medium text-ink">
-                      {c.name}
-                    </span>
-                    <HolesBadge holes={c.holes} />
-                    <div className="text-right">
-                      <button
-                        onClick={() => openEdit(c)}
-                        className="text-xs font-semibold text-fairway hover:underline"
-                      >
-                        Edit
-                      </button>
+                  <div key={c.id}>
+                    <div className="grid grid-cols-[minmax(0,1fr)_80px_80px] items-center px-4 py-3">
+                      <span className="truncate text-sm font-medium text-ink">
+                        {c.name}
+                      </span>
+                      <HolesBadge holes={c.holes} />
+                      <div className="text-right">
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="text-xs font-semibold text-fairway hover:underline"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                    <div className="px-4 pb-3">
+                      <CourseHolesEditor clubId={clubId} course={c} />
                     </div>
                   </div>
                 ))}

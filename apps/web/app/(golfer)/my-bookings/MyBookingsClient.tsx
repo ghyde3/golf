@@ -317,12 +317,20 @@ export default function MyBookingsClient({
         </div>
       </section>
 
-      <Link
-        href="/"
-        className="mt-10 inline-block text-sm font-medium text-ds-fairway underline-offset-4 hover:underline"
-      >
-        ← Back to home
-      </Link>
+      <div className="mt-10 flex flex-col gap-1">
+        <Link
+          href="/"
+          className="inline-block text-sm font-medium text-ds-fairway underline-offset-4 hover:underline"
+        >
+          ← Back to home
+        </Link>
+        <Link
+          href="/account"
+          className="mt-4 inline-block text-sm font-medium text-ds-fairway underline-offset-4 hover:underline"
+        >
+          Account settings →
+        </Link>
+      </div>
     </div>
   );
 }

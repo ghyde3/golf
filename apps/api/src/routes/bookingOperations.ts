@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, isNull, desc, sql, gte, asc } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, gte, asc, inArray } from "drizzle-orm";
 import {
   db,
   bookings,
@@ -8,6 +8,11 @@ import {
   courses,
   clubConfig,
   waitlistEntries,
+  addonCatalog,
+  bookingAddonLines,
+  bookingResourceAssignments,
+  resourceItems,
+  resourceTypes,
 } from "@teetimes/db";
 import { CreateBookingSchema } from "@teetimes/validators";
 import { authenticate } from "../middleware/auth";
@@ -27,6 +32,13 @@ import {
 import { isCancellable } from "../lib/cancellation";
 import { resolveConfig } from "../lib/configResolver";
 import { publicRateLimit } from "../middleware/rateLimit";
+import {
+  checkAndInsertAddons,
+  AddOnUnavailableError,
+  restoreAddonResourcesForBooking,
+  recomputeBookingAddonsAfterMove,
+} from "../lib/bookingAddons";
+import type { AddonLineInput } from "@teetimes/validators";
 
 const router = Router();
 
@@ -91,6 +103,86 @@ router.get("/:bookingId", authenticate, async (req, res) => {
     return;
   }
 
+  const addonRows = await db
+    .select({
+      id: bookingAddonLines.id,
+      addonCatalogId: bookingAddonLines.addonCatalogId,
+      catalogName: addonCatalog.name,
+      catalogUnitsConsumed: addonCatalog.unitsConsumed,
+      quantity: bookingAddonLines.quantity,
+      unitPriceCents: bookingAddonLines.unitPriceCents,
+      bookingStart: bookingAddonLines.bookingStart,
+      bookingEnd: bookingAddonLines.bookingEnd,
+      status: bookingAddonLines.status,
+      resourceTypeId: bookingAddonLines.resourceTypeId,
+      assignmentStrategy: resourceTypes.assignmentStrategy,
+      trackingMode: resourceTypes.trackingMode,
+    })
+    .from(bookingAddonLines)
+    .innerJoin(addonCatalog, eq(bookingAddonLines.addonCatalogId, addonCatalog.id))
+    .leftJoin(resourceTypes, eq(bookingAddonLines.resourceTypeId, resourceTypes.id))
+    .where(eq(bookingAddonLines.bookingId, bookingId));
+
+  const lineIds = addonRows.map((a) => a.id);
+  const assignmentsByLine = new Map<
+    string,
+    {
+      id: string;
+      resourceItemId: string;
+      label: string;
+      supersededAt: Date | null;
+    }[]
+  >();
+  if (lineIds.length > 0) {
+    const assigns = await db
+      .select({
+        id: bookingResourceAssignments.id,
+        lineId: bookingResourceAssignments.bookingAddonLineId,
+        resourceItemId: bookingResourceAssignments.resourceItemId,
+        label: resourceItems.label,
+        supersededAt: bookingResourceAssignments.supersededAt,
+      })
+      .from(bookingResourceAssignments)
+      .innerJoin(
+        resourceItems,
+        eq(bookingResourceAssignments.resourceItemId, resourceItems.id)
+      )
+      .where(
+        and(
+          inArray(bookingResourceAssignments.bookingAddonLineId, lineIds),
+          eq(resourceItems.clubId, clubId),
+          isNull(bookingResourceAssignments.supersededAt)
+        )
+      );
+
+    for (const a of assigns) {
+      const list = assignmentsByLine.get(a.lineId) ?? [];
+      list.push({
+        id: a.id,
+        resourceItemId: a.resourceItemId,
+        label: a.label,
+        supersededAt: a.supersededAt,
+      });
+      assignmentsByLine.set(a.lineId, list);
+    }
+  }
+
+  const addons = addonRows.map((a) => ({
+    id: a.id,
+    addonCatalogId: a.addonCatalogId,
+    name: a.catalogName,
+    quantity: a.quantity,
+    unitPriceCents: a.unitPriceCents,
+    catalogUnitsConsumed: a.catalogUnitsConsumed,
+    bookingStart: a.bookingStart?.toISOString() ?? null,
+    bookingEnd: a.bookingEnd?.toISOString() ?? null,
+    status: a.status,
+    resourceTypeId: a.resourceTypeId,
+    assignmentStrategy: a.assignmentStrategy ?? "none",
+    trackingMode: a.trackingMode,
+    assignments: assignmentsByLine.get(a.id) ?? [],
+  }));
+
   res.json({
     id: booking.id,
     bookingRef: booking.bookingRef,
@@ -108,6 +200,7 @@ router.get("/:bookingId", authenticate, async (req, res) => {
       price: booking.teeSlot.price ? Number(booking.teeSlot.price) : null,
       courseId: booking.teeSlot.courseId,
       courseName: booking.teeSlot.course.name,
+      clubId: booking.teeSlot.course.club.id,
     },
     players: booking.players.map((p) => ({
       id: p.id,
@@ -116,6 +209,7 @@ router.get("/:bookingId", authenticate, async (req, res) => {
       checkedIn: p.checkedIn,
       noShow: p.noShow,
     })),
+    addons,
   });
 });
 
@@ -238,6 +332,25 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
 
   let finalTargetId = "";
 
+  const addonLineRows = await db
+    .select({
+      addonCatalogId: bookingAddonLines.addonCatalogId,
+      quantity: bookingAddonLines.quantity,
+    })
+    .from(bookingAddonLines)
+    .where(eq(bookingAddonLines.bookingId, bookingId));
+
+  const mergedAddon = new Map<string, number>();
+  for (const r of addonLineRows) {
+    mergedAddon.set(
+      r.addonCatalogId,
+      (mergedAddon.get(r.addonCatalogId) ?? 0) + r.quantity
+    );
+  }
+  const previousAddOnInputs: AddonLineInput[] = [...mergedAddon.entries()].map(
+    ([addonCatalogId, quantity]) => ({ addonCatalogId, quantity })
+  );
+
   try {
     await db.transaction(async (tx) => {
       const [dec] = await tx
@@ -310,6 +423,25 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
         .where(eq(bookings.id, bookingId));
 
       finalTargetId = targetTeeSlotId;
+
+      const newSlotRow = await tx.query.teeSlots.findFirst({
+        where: eq(teeSlots.id, targetTeeSlotId),
+      });
+      if (!newSlotRow) {
+        throw new Error("NO_TARGET_SLOT");
+      }
+      if (previousAddOnInputs.length > 0) {
+        await recomputeBookingAddonsAfterMove(tx, {
+          clubId,
+          bookingId,
+          newTeeSlot: {
+            id: newSlotRow.id,
+            datetime: newSlotRow.datetime,
+            slotType: newSlotRow.slotType ?? null,
+          },
+          previousAddOnInputs,
+        });
+      }
     });
 
     const newSlotRow = await db.query.teeSlots.findFirst({
@@ -329,6 +461,15 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
 
     res.json({ ok: true, bookingId, teeSlotId: finalTargetId });
   } catch (e) {
+    if (e instanceof AddOnUnavailableError) {
+      res.status(409).json({
+        code: e.code,
+        error: "Add-on is not available after move",
+        addonCatalogId: e.addonCatalogId,
+        name: e.addonName,
+      });
+      return;
+    }
     const msg = (e as Error).message;
     if (msg === "DEC_FAIL" || msg === "INC_FAIL") {
       res.status(409).json({ error: "Could not move booking" });
@@ -346,6 +487,10 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
         code: "SLOT_FULL",
         error: "Target slot does not have capacity",
       });
+      return;
+    }
+    if (msg === "NO_TARGET_SLOT") {
+      res.status(500).json({ error: "Target slot missing" });
       return;
     }
     console.error(e);
@@ -445,6 +590,7 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
 
   try {
     await db.transaction(async (tx) => {
+      await restoreAddonResourcesForBooking(tx, bookingId);
       await tx
         .update(bookings)
         .set({
@@ -510,7 +656,7 @@ router.post("/", authenticate, async (req, res) => {
     return;
   }
 
-  const { teeSlotId, playersCount, guestName, guestEmail, notes, players } =
+  const { teeSlotId, playersCount, guestName, guestEmail, notes, players, addOns } =
     parsed.data;
 
   try {
@@ -575,6 +721,17 @@ router.post("/", authenticate, async (req, res) => {
         }
       }
 
+      await checkAndInsertAddons(tx, {
+        clubId: clubRow.id,
+        bookingId: booking.id,
+        teeSlot: {
+          id: updatedSlot.id,
+          datetime: updatedSlot.datetime,
+          slotType: updatedSlot.slotType ?? null,
+        },
+        addOns,
+      });
+
       return { booking, updatedSlot, club: clubRow };
     });
 
@@ -600,6 +757,15 @@ router.post("/", authenticate, async (req, res) => {
       status: booking.status,
     });
   } catch (e) {
+    if (e instanceof AddOnUnavailableError) {
+      res.status(409).json({
+        code: e.code,
+        error: "Add-on is not available",
+        addonCatalogId: e.addonCatalogId,
+        name: e.addonName,
+      });
+      return;
+    }
     const msg = (e as Error).message;
     if (msg === "SLOT_FULL") {
       res.status(409).json({ code: "SLOT_FULL", error: "That slot is full" });
@@ -667,5 +833,155 @@ router.patch("/:bookingId/players/:playerId", authenticate, async (req, res) => 
     noShow: row.noShow,
   });
 });
+
+router.post(
+  "/:bookingId/addons/:lineId/assignments",
+  authenticate,
+  async (req, res) => {
+    const auth = req.auth;
+    if (!auth) {
+      sendUnauthorized(res);
+      return;
+    }
+    const bookingId = String(req.params.bookingId);
+    const lineId = String(req.params.lineId);
+    const resourceItemIdRaw = (req.body as { resourceItemId?: unknown })
+      ?.resourceItemId;
+    const resourceItemId =
+      typeof resourceItemIdRaw === "string" ? resourceItemIdRaw.trim() : "";
+    if (!resourceItemId) {
+      res.status(400).json({ error: "resourceItemId required" });
+      return;
+    }
+
+    const [line] = await db
+      .select({
+        lineId: bookingAddonLines.id,
+        strat: resourceTypes.assignmentStrategy,
+        rtId: bookingAddonLines.resourceTypeId,
+        clubId: courses.clubId,
+      })
+      .from(bookingAddonLines)
+      .innerJoin(bookings, eq(bookingAddonLines.bookingId, bookings.id))
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .leftJoin(resourceTypes, eq(bookingAddonLines.resourceTypeId, resourceTypes.id))
+      .where(
+        and(
+          eq(bookingAddonLines.id, lineId),
+          eq(bookingAddonLines.bookingId, bookingId)
+        )
+      );
+
+    if (!line) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    if (!canAccessClub(auth.roles, line.clubId)) {
+      sendForbidden(res);
+      return;
+    }
+
+    if (line.strat !== "manual") {
+      res.status(400).json({
+        error: "Only manual add-ons can be assigned from the tee sheet",
+      });
+      return;
+    }
+
+    if (!line.rtId) {
+      res.status(400).json({ error: "Add-on line has no resource type" });
+      return;
+    }
+
+    const [item] = await db
+      .select({
+        id: resourceItems.id,
+        label: resourceItems.label,
+        status: resourceItems.operationalStatus,
+      })
+      .from(resourceItems)
+      .where(
+        and(
+          eq(resourceItems.id, resourceItemId),
+          eq(resourceItems.resourceTypeId, line.rtId),
+          eq(resourceItems.clubId, line.clubId)
+        )
+      );
+
+    if (!item || item.status !== "available") {
+      res.status(409).json({ error: "Resource item is not available" });
+      return;
+    }
+
+    const [created] = await db
+      .insert(bookingResourceAssignments)
+      .values({
+        bookingAddonLineId: line.lineId,
+        resourceItemId,
+        assignedBy: auth.userId,
+      })
+      .returning();
+
+    res.status(201).json({
+      id: created.id,
+      resourceItemId: created.resourceItemId,
+      label: item.label,
+    });
+  }
+);
+
+router.delete(
+  "/:bookingId/addons/:lineId/assignments/:assignmentId",
+  authenticate,
+  async (req, res) => {
+    const auth = req.auth;
+    if (!auth) {
+      sendUnauthorized(res);
+      return;
+    }
+    const bookingId = String(req.params.bookingId);
+    const lineId = String(req.params.lineId);
+    const assignmentId = String(req.params.assignmentId);
+
+    const [row] = await db
+      .select({ clubId: courses.clubId })
+      .from(bookingResourceAssignments)
+      .innerJoin(
+        bookingAddonLines,
+        eq(
+          bookingResourceAssignments.bookingAddonLineId,
+          bookingAddonLines.id
+        )
+      )
+      .innerJoin(bookings, eq(bookingAddonLines.bookingId, bookings.id))
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          eq(bookingResourceAssignments.id, assignmentId),
+          eq(bookingAddonLines.id, lineId),
+          eq(bookingAddonLines.bookingId, bookingId)
+        )
+      );
+
+    if (!row) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+
+    if (!canAccessClub(auth.roles, row.clubId)) {
+      sendForbidden(res);
+      return;
+    }
+
+    await db
+      .delete(bookingResourceAssignments)
+      .where(eq(bookingResourceAssignments.id, assignmentId));
+
+    res.json({ ok: true });
+  }
+);
 
 export default router;

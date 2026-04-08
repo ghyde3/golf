@@ -4,7 +4,16 @@ import Redis from "ioredis";
 import { render } from "@react-email/render";
 import { sendEmail } from "../lib/email";
 import { eq, desc, and, isNull } from "drizzle-orm";
-import { db, failedJobs, bookings, clubConfig, waitlistEntries, users } from "@teetimes/db";
+import {
+  db,
+  failedJobs,
+  bookings,
+  clubConfig,
+  waitlistEntries,
+  users,
+  bookingAddonLines,
+  addonCatalog,
+} from "@teetimes/db";
 import { formatInTimeZone } from "date-fns-tz";
 import { BookingConfirmationEmail } from "../emails/BookingConfirmation";
 import { BookingReminderEmail } from "../emails/BookingReminder";
@@ -48,6 +57,23 @@ async function sendConfirmationEmail(bookingId: string): Promise<void> {
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
   const manageUrl = `${baseUrl}/book/${club.slug}`;
 
+  const addonRows = await db
+    .select({
+      name: addonCatalog.name,
+      quantity: bookingAddonLines.quantity,
+      unitPriceCents: bookingAddonLines.unitPriceCents,
+    })
+    .from(bookingAddonLines)
+    .innerJoin(addonCatalog, eq(bookingAddonLines.addonCatalogId, addonCatalog.id))
+    .where(eq(bookingAddonLines.bookingId, bookingId));
+
+  const addonLines = addonRows.map((r) => ({
+    name: r.name,
+    quantity: r.quantity,
+    lineTotalCents: r.quantity * r.unitPriceCents,
+  }));
+  const addonsTotalCents = addonLines.reduce((s, l) => s + l.lineTotalCents, 0);
+
   const html = await render(
     React.createElement(BookingConfirmationEmail, {
       clubName: club.name,
@@ -56,6 +82,8 @@ async function sendConfirmationEmail(bookingId: string): Promise<void> {
       playersCount: booking.playersCount,
       notes: booking.notes,
       manageUrl,
+      addonLines: addonLines.length > 0 ? addonLines : undefined,
+      addonsTotalCents: addonsTotalCents > 0 ? addonsTotalCents : undefined,
     })
   );
 

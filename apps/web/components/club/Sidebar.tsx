@@ -20,6 +20,7 @@ import {
   LogOut,
   Package,
   Settings,
+  ShoppingBag,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -187,6 +188,7 @@ export function Sidebar({
   const management: NavItem[] = [
     { href: `${base}/courses`, label: "Courses", icon: <Flag /> },
     { href: `${base}/resources`, label: "Resources", icon: <Package /> },
+    { href: `${base}/addons`, label: "Add-ons", icon: <ShoppingBag /> },
     { href: `${base}/staff`, label: "Staff", icon: <Users /> },
     { href: `${base}/settings`, label: "Settings", icon: <Settings /> },
     { href: `${base}/reports`, label: "Reports", icon: <BarChart3 /> },

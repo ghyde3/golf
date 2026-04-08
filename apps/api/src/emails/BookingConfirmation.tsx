@@ -17,6 +17,8 @@ export type BookingConfirmationProps = {
   playersCount: number;
   notes?: string | null;
   manageUrl: string;
+  addonLines?: { name: string; quantity: number; lineTotalCents: number }[];
+  addonsTotalCents?: number;
 };
 
 export function BookingConfirmationEmail({
@@ -26,6 +28,8 @@ export function BookingConfirmationEmail({
   playersCount,
   notes,
   manageUrl,
+  addonLines,
+  addonsTotalCents,
 }: BookingConfirmationProps) {
   return (
     <Html>
@@ -41,6 +45,22 @@ export function BookingConfirmationEmail({
         </Text>
         <Text style={text}>Tee time: {whenLabel}</Text>
         <Text style={text}>Players: {playersCount}</Text>
+        {addonLines && addonLines.length > 0 ? (
+          <Section style={{ marginTop: "12px" }}>
+            <Text style={{ ...text, fontWeight: 600 }}>Add-ons</Text>
+            {addonLines.map((line, i) => (
+              <Text key={i} style={text}>
+                {line.name} × {line.quantity} — $
+                {(line.lineTotalCents / 100).toFixed(2)}
+              </Text>
+            ))}
+            {addonsTotalCents != null && addonsTotalCents > 0 ? (
+              <Text style={{ ...text, marginTop: "6px", fontWeight: 600 }}>
+                Add-ons total: ${(addonsTotalCents / 100).toFixed(2)}
+              </Text>
+            ) : null}
+          </Section>
+        ) : null}
         {notes ? <Text style={text}>Notes: {notes}</Text> : null}
         <Section style={btnContainer}>
           <Link href={manageUrl} style={button}>

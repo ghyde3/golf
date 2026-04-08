@@ -50,6 +50,13 @@
       "when": 1775606670414,
       "tag": "0006_bizarre_titania",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775612938893,
+      "tag": "0007_normal_slayback",
+      "breakpoints": true
     }
   ]
 }

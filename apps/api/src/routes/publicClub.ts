@@ -40,6 +40,11 @@ import {
 import { buildFilteredAvailability } from "../lib/availabilityMerge";
 import { enqueueEmail, getEmailQueue } from "../lib/queue";
 import { getAuthPayload } from "../lib/auth";
+import {
+  checkAndInsertAddons,
+  AddOnUnavailableError,
+  restoreAddonResourcesForBooking,
+} from "../lib/bookingAddons";
 
 const router = Router();
 
@@ -457,6 +462,7 @@ router.post(
       teeSlotId: bodyTeeSlotId,
       courseId,
       datetime,
+      addOns,
     } = body;
 
     const clubRow = await resolveClubForPublicBooking(body);
@@ -466,9 +472,9 @@ router.post(
     }
 
     const bookingFee = parseFloat(String(clubRow.bookingFee ?? "0"));
-    const amountCents = Math.round(bookingFee * playersCount * 100);
-
-    if (amountCents === 0) {
+    const baseAmountCents = Math.round(bookingFee * playersCount * 100);
+    const hasAddOns = Boolean(addOns && addOns.length > 0);
+    if (baseAmountCents === 0 && !hasAddOns) {
       res.json({ requiresPayment: false });
       return;
     }
@@ -478,8 +484,8 @@ router.post(
     const publicSource = authPayload ? "online_user" : "online_guest";
 
     try {
-      const { booking, updatedSlot, clubIdForCache } = await db.transaction(
-        async (tx) => {
+      const { booking, updatedSlot, clubIdForCache, addonTotalCents } =
+        await db.transaction(async (tx) => {
           let slotId = bodyTeeSlotId;
 
           if (!slotId && courseId && datetime) {
@@ -555,9 +561,24 @@ router.post(
             }
           }
 
-          return { booking, updatedSlot, clubIdForCache };
-        }
-      );
+          const clubIdForAddon = slotWithCourse?.course?.club?.id;
+          if (!clubIdForAddon) {
+            throw new Error("NO_CLUB");
+          }
+
+          const { addonTotalCents } = await checkAndInsertAddons(tx, {
+            clubId: clubIdForAddon,
+            bookingId: booking.id,
+            teeSlot: {
+              id: updatedSlot.id,
+              datetime: updatedSlot.datetime,
+              slotType: updatedSlot.slotType ?? null,
+            },
+            addOns,
+          });
+
+          return { booking, updatedSlot, clubIdForCache, addonTotalCents };
+        });
 
       const dateStr = updatedSlot.datetime.toISOString().split("T")[0];
       if (clubIdForCache) {
@@ -568,10 +589,26 @@ router.post(
         );
       }
 
+      const totalAmountCents = baseAmountCents + addonTotalCents;
+      if (totalAmountCents === 0) {
+        await db
+          .update(bookings)
+          .set({ paymentStatus: "unpaid" })
+          .where(eq(bookings.id, booking.id));
+        res.json({
+          requiresPayment: false,
+          bookingId: booking.id,
+          bookingRef: booking.bookingRef,
+          amountCents: 0,
+          datetime: updatedSlot.datetime.toISOString(),
+        });
+        return;
+      }
+
       try {
         const stripe = getStripe();
         const intent = await stripe.paymentIntents.create({
-          amount: amountCents,
+          amount: totalAmountCents,
           currency: "usd",
           metadata: {
             bookingId: booking.id,
@@ -585,12 +622,13 @@ router.post(
           clientSecret: intent.client_secret,
           bookingId: booking.id,
           bookingRef: booking.bookingRef,
-          amountCents,
+          amountCents: totalAmountCents,
           datetime: updatedSlot.datetime.toISOString(),
         });
       } catch (stripeErr) {
         console.error("Stripe payment intent error:", stripeErr);
         await db.transaction(async (tx) => {
+          await restoreAddonResourcesForBooking(tx, booking.id);
           await tx
             .update(bookings)
             .set({
@@ -616,6 +654,15 @@ router.post(
         res.status(500).json({ error: "Payment setup failed" });
       }
     } catch (error) {
+      if (error instanceof AddOnUnavailableError) {
+        res.status(409).json({
+          code: error.code,
+          error: "Add-on is not available",
+          addonCatalogId: error.addonCatalogId,
+          name: error.addonName,
+        });
+        return;
+      }
       const msg = (error as Error).message;
       if (msg === "SLOT_FULL") {
         res.status(409).json({ code: "SLOT_FULL", error: "That slot is full" });
@@ -625,6 +672,10 @@ router.post(
         res
           .status(400)
           .json({ error: "teeSlotId or (courseId + datetime) required" });
+        return;
+      }
+      if (msg === "NO_CLUB") {
+        res.status(400).json({ error: "Invalid tee slot" });
         return;
       }
       console.error("Error creating payment intent booking:", error);
@@ -761,6 +812,7 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
     teeSlotId: bodyTeeSlotId,
     courseId,
     datetime,
+    addOns,
   } = body;
 
   const authPayload = getAuthPayload(req);
@@ -845,6 +897,22 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
           }
         }
 
+        const clubIdForAddon = slotWithCourse?.course?.club?.id;
+        if (!clubIdForAddon) {
+          throw new Error("NO_CLUB");
+        }
+
+        await checkAndInsertAddons(tx, {
+          clubId: clubIdForAddon,
+          bookingId: booking.id,
+          teeSlot: {
+            id: updatedSlot.id,
+            datetime: updatedSlot.datetime,
+            slotType: updatedSlot.slotType ?? null,
+          },
+          addOns,
+        });
+
         return { booking, updatedSlot, clubIdForCache };
       }
     );
@@ -892,6 +960,15 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
       datetime: updatedSlot.datetime.toISOString(),
     });
   } catch (error) {
+    if (error instanceof AddOnUnavailableError) {
+      res.status(409).json({
+        code: error.code,
+        error: "Add-on is not available",
+        addonCatalogId: error.addonCatalogId,
+        name: error.addonName,
+      });
+      return;
+    }
     const msg = (error as Error).message;
     if (msg === "SLOT_FULL") {
       res.status(409).json({ code: "SLOT_FULL", error: "That slot is full" });
@@ -901,6 +978,10 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
       res
         .status(400)
         .json({ error: "teeSlotId or (courseId + datetime) required" });
+      return;
+    }
+    if (msg === "NO_CLUB") {
+      res.status(400).json({ error: "Invalid tee slot" });
       return;
     }
     console.error("Error creating booking:", error);

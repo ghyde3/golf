@@ -6,6 +6,7 @@ import stripeRoutes from "./routes/stripe";
 import clubManageRoutes from "./routes/clubs";
 import clubResources from "./routes/clubResources";
 import resourceRoutes from "./routes/resources";
+import addonRoutes from "./routes/addons";
 import publicClubRoutes from "./routes/publicClub";
 import { handleWaitlistClaim } from "./routes/waitlistClaim";
 import bookingOperations from "./routes/bookingOperations";
@@ -29,6 +30,7 @@ app.use("/api/me", meRoutes);
 // Public routes must run before `/api/clubs/:clubId` or paths like
 // `/api/clubs/public/:slug` are captured as clubId "public" and hit auth (401).
 app.get("/api/waitlist/claim", publicRateLimit, handleWaitlistClaim);
+app.use("/api", addonRoutes);
 app.use("/api", publicClubRoutes);
 app.use("/api/clubs/:clubId/manage", clubManageRoutes);
 /** Inventory / resource management — must be registered before the broader `/api/clubs/:clubId` router. */

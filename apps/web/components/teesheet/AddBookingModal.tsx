@@ -17,6 +17,21 @@ import { toast } from "sonner";
 import { TeeTimeChipPicker } from "./TeeTimeChipPicker";
 import type { TeeSlotRow } from "./types";
 
+type StaffAddonItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  sortOrder: number;
+  unitsConsumed: number;
+  resourceTypeId: string | null;
+  active?: boolean;
+};
+
+function maxStaffAddonQty(a: StaffAddonItem): number {
+  return a.unitsConsumed === 1 ? 4 : 1;
+}
+
 function todayIsoLocal(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -84,6 +99,8 @@ export function AddBookingModal({
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [players, setPlayers] = useState(2);
+  const [addonCatalog, setAddonCatalog] = useState<StaffAddonItem[]>([]);
+  const [addonQty, setAddonQty] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (open) {
@@ -100,8 +117,29 @@ export function AddBookingModal({
           : (courses[0]?.id ?? "")
       );
       setPickerDate(dateStr);
+      setAddonQty({});
     }
   }, [open, initialSlot, courses, dateStr, initialCourseId]);
+
+  useEffect(() => {
+    if (!open || !clubId) return;
+    let cancelled = false;
+    fetch(`/api/clubs/${clubId}/addons`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: StaffAddonItem[]) => {
+        if (!cancelled && Array.isArray(data)) {
+          const activeOnly = data.filter((a: StaffAddonItem) => a.active !== false);
+          setAddonCatalog(activeOnly);
+          const init: Record<string, number> = {};
+          for (const a of activeOnly) init[a.id] = 0;
+          setAddonQty((prev) => ({ ...init, ...prev }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open, clubId]);
 
   useEffect(() => {
     if (!open || modeA || !courseId) return;
@@ -132,6 +170,15 @@ export function AddBookingModal({
     [teesheet, players, pickerDate]
   );
 
+  const buildAddOnsPayload = useCallback(() => {
+    const out: { addonCatalogId: string; quantity: number }[] = [];
+    for (const a of addonCatalog) {
+      const q = addonQty[a.id] ?? 0;
+      if (q > 0) out.push({ addonCatalogId: a.id, quantity: q });
+    }
+    return out;
+  }, [addonCatalog, addonQty]);
+
   useEffect(() => {
     if (!modeA && pickedSlot && times.length > 0) {
       const still = times.some((t) => t.datetime === pickedSlot.datetime);
@@ -152,6 +199,7 @@ export function AddBookingModal({
     setSubmitting(true);
     setError(null);
     try {
+      const addOns = buildAddOnsPayload();
       if (slot.id) {
         const res = await fetch("/api/bookings", {
           method: "POST",
@@ -163,11 +211,21 @@ export function AddBookingModal({
             guestName: name.trim(),
             guestEmail: email.trim(),
             notes: notes.trim() || undefined,
+            ...(addOns.length > 0 ? { addOns } : {}),
           }),
         });
         const raw = await res.text();
         if (res.status === 409) {
-          setError("This slot just filled — choose another time");
+          try {
+            const j = JSON.parse(raw) as { code?: string };
+            if (j.code === "ADDON_UNAVAILABLE") {
+              setError("An add-on is not available for this time.");
+            } else {
+              setError("This slot just filled — choose another time");
+            }
+          } catch {
+            setError("This slot just filled — choose another time");
+          }
           setSubmitting(false);
           return;
         }
@@ -193,11 +251,21 @@ export function AddBookingModal({
             guestName: name.trim(),
             guestEmail: email.trim(),
             notes: notes.trim() || undefined,
+            ...(addOns.length > 0 ? { addOns } : {}),
           }),
         });
         const raw = await res.text();
         if (res.status === 409) {
-          setError("This slot just filled — choose another time");
+          try {
+            const j = JSON.parse(raw) as { code?: string };
+            if (j.code === "ADDON_UNAVAILABLE") {
+              setError("An add-on is not available for this time.");
+            } else {
+              setError("This slot just filled — choose another time");
+            }
+          } catch {
+            setError("This slot just filled — choose another time");
+          }
           setSubmitting(false);
           return;
         }
@@ -230,6 +298,7 @@ export function AddBookingModal({
     players,
     onOpenChange,
     onSuccess,
+    buildAddOnsPayload,
   ]);
 
   const slotForCard = modeA ? initialSlot : pickedSlot;
@@ -369,6 +438,66 @@ export function AddBookingModal({
               </Button>
             </div>
           </div>
+          {addonCatalog.length > 0 ? (
+            <div>
+              <label className="text-xs font-bold uppercase tracking-widest text-muted">
+                Add-ons
+              </label>
+              <ul className="mt-2 space-y-2 rounded-lg border border-stone bg-white p-2">
+                {addonCatalog.map((a) => {
+                  const q = addonQty[a.id] ?? 0;
+                  const maxQ = maxStaffAddonQty(a);
+                  return (
+                    <li
+                      key={a.id}
+                      className="flex items-center justify-between gap-2 text-sm"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-ink">
+                        {a.name}{" "}
+                        <span className="text-muted">
+                          (${(a.priceCents / 100).toFixed(0)})
+                        </span>
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="secondary"
+                          className="h-7 w-7 border-stone"
+                          disabled={q <= 0}
+                          onClick={() =>
+                            setAddonQty((prev) => ({
+                              ...prev,
+                              [a.id]: Math.max(0, (prev[a.id] ?? 0) - 1),
+                            }))
+                          }
+                        >
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <span className="w-5 text-center font-mono text-xs">{q}</span>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="secondary"
+                          className="h-7 w-7 border-stone"
+                          disabled={q >= maxQ}
+                          onClick={() =>
+                            setAddonQty((prev) => ({
+                              ...prev,
+                              [a.id]: Math.min(maxQ, (prev[a.id] ?? 0) + 1),
+                            }))
+                          }
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
           <div>
             <label className="text-xs font-bold uppercase tracking-widest text-muted">
               Notes

@@ -30,6 +30,7 @@ export type BookingDetail = {
     price: number | null;
     courseId: string;
     courseName: string;
+    clubId?: string;
   };
   players: {
     id: string;
@@ -37,5 +38,25 @@ export type BookingDetail = {
     email: string | null;
     checkedIn: boolean | null;
     noShow: boolean | null;
+  }[];
+  addons?: {
+    id: string;
+    addonCatalogId: string;
+    name: string;
+    quantity: number;
+    unitPriceCents: number;
+    catalogUnitsConsumed?: number;
+    bookingStart: string | null;
+    bookingEnd: string | null;
+    status: string;
+    resourceTypeId: string | null;
+    assignmentStrategy: string;
+    trackingMode: string | null;
+    assignments: {
+      id: string;
+      resourceItemId: string;
+      label: string;
+      supersededAt: string | null;
+    }[];
   }[];
 };

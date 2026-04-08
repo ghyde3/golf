@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AddonLineInputSchema } from "./addons";
 
 export const CreateBookingSchema = z.object({
   teeSlotId: z.string().uuid(),
@@ -6,6 +7,7 @@ export const CreateBookingSchema = z.object({
   guestName: z.string().min(1),
   guestEmail: z.string().email(),
   notes: z.string().max(500).optional(),
+  addOns: z.array(AddonLineInputSchema).optional(),
   players: z
     .array(
       z.object({
@@ -36,6 +38,7 @@ export const PublicBookingBodySchema = z
         })
       )
       .optional(),
+    addOns: z.array(AddonLineInputSchema).optional(),
   })
   .refine((d) => d.teeSlotId || (d.courseId && d.datetime), {
     message: "Provide teeSlotId or both courseId and datetime",

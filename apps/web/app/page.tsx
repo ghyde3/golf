@@ -111,8 +111,6 @@ export default async function Home() {
     }
   }
 
-  const bookHref = first ? `/book/${first.slug}` : "/search";
-
   return (
     <main className="min-h-screen bg-ds-body-bg text-ds-ink antialiased">
       <header className="relative z-20 hidden h-16 items-center gap-10 border-b border-white/10 bg-ds-forest px-12 lg:flex">
@@ -132,32 +130,30 @@ export default async function Home() {
           </Link>
           <span className="cursor-not-allowed text-white/55">Saved</span>
         </nav>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-5">
           {session?.user ? (
             <Link
               href="/my-bookings"
-              className="text-[12px] font-medium text-white/75 transition hover:text-white"
+              className="text-[13px] font-medium text-white/80 transition hover:text-white"
             >
               My bookings
             </Link>
           ) : (
-            <p className="max-w-[280px] text-right text-[12px] leading-snug text-white/70">
-              Already have an account?{" "}
-              <Link href="/login" className="text-white/95 underline-offset-2 hover:text-white hover:underline">
-                Sign in
+            <>
+              <Link
+                href="/login"
+                className="text-[13px] font-medium text-white/90 transition hover:text-white"
+              >
+                Log in
               </Link>
-              <span className="text-white/45"> · </span>
-              <Link href="/register" className="text-white/95 underline-offset-2 hover:text-white hover:underline">
-                Create account
+              <Link
+                href="/register"
+                className="rounded-lg bg-ds-gold px-[18px] py-2 text-[13px] font-semibold text-ds-forest transition hover:bg-ds-gold-light"
+              >
+                Sign up
               </Link>
-            </p>
+            </>
           )}
-          <Link
-            href={bookHref}
-            className="rounded-lg bg-ds-gold px-[18px] py-2 text-[13px] font-semibold text-ds-forest"
-          >
-            Book now
-          </Link>
         </div>
       </header>
 
@@ -208,17 +204,18 @@ export default async function Home() {
           </Link>
         </div>
       ) : (
-        <div className="border-b border-ds-stone/60 bg-ds-warm-white px-4 py-2.5 text-center lg:hidden">
-          <p className="text-[12px] text-ds-muted">
-            Already have an account?{" "}
-            <Link href="/login" className="font-medium text-ds-fairway underline-offset-2 hover:underline">
-              Sign in
+        <div className="border-b border-ds-stone/60 bg-ds-warm-white px-4 py-2.5 lg:hidden">
+          <div className="flex items-center justify-center gap-4">
+            <Link href="/login" className="text-[13px] font-medium text-ds-ink">
+              Log in
             </Link>
-            <span className="text-ds-stone"> · </span>
-            <Link href="/register" className="font-medium text-ds-fairway underline-offset-2 hover:underline">
-              Create account
+            <Link
+              href="/register"
+              className="rounded-lg bg-ds-gold px-4 py-2 text-[13px] font-semibold text-ds-forest"
+            >
+              Sign up
             </Link>
-          </p>
+          </div>
         </div>
       )}
 

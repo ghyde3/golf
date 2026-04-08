@@ -8,4 +8,5 @@ export * from "./announcements";
 export * from "./platform-users";
 export * from "./platform-billing";
 export * from "./resources";
+export * from "./addons";
 export * from "./waitlist";

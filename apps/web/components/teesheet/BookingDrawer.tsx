@@ -18,6 +18,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { BookingDetail } from "./types";
+import { BookingDrawerAddons } from "./BookingDrawerAddons";
 
 export function BookingDrawer({
   bookingId,
@@ -38,6 +39,16 @@ export function BookingDrawer({
   );
   const [pending, setPending] = useState<Set<string>>(() => new Set());
   const isTablet = useMediaQuery("(max-width: 1023px)");
+
+  const reloadBooking = useCallback(async () => {
+    if (!bookingId) return;
+    const res = await fetch(`/api/bookings/${bookingId}`, {
+      credentials: "include",
+    });
+    if (!res.ok) return;
+    const data = (await res.json()) as BookingDetail;
+    setDetail(data);
+  }, [bookingId]);
 
   useEffect(() => {
     if (!open || !bookingId) {
@@ -221,6 +232,14 @@ export function BookingDrawer({
                     : "—"}
                 </p>
               </div>
+
+              {bookingId ? (
+                <BookingDrawerAddons
+                  detail={detail}
+                  bookingId={bookingId}
+                  onReload={reloadBooking}
+                />
+              ) : null}
 
               <div className="mt-6 border-t border-stone pt-4">
                 <h3 className="text-xs font-bold uppercase tracking-widest text-muted">

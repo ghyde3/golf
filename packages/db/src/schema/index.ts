@@ -8,4 +8,5 @@ export * from "./invoices";
 export * from "./audit-log";
 export * from "./announcements";
 export * from "./resources";
+export * from "./addons";
 export * from "./waitlist";

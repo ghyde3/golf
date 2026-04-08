@@ -91,27 +91,6 @@ export const poolMaintenanceHolds = pgTable(
   ]
 );
 
-export const bookingResourceAssignments = pgTable(
-  "booking_resource_assignments",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    bookingAddonLineId: uuid("booking_addon_line_id").notNull(),
-    resourceItemId: uuid("resource_item_id")
-      .references(() => resourceItems.id)
-      .notNull(),
-    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
-    assignedBy: uuid("assigned_by").references(() => users.id),
-    supersededAt: timestamp("superseded_at", { withTimezone: true }),
-  },
-  (t) => [
-    index("booking_resource_assignments_booking_addon_line_id_superseded_at_idx").on(
-      t.bookingAddonLineId,
-      t.supersededAt
-    ),
-    index("booking_resource_assignments_resource_item_id_idx").on(t.resourceItemId),
-  ]
-);
-
 export const resourceItemStatusLog = pgTable(
   "resource_item_status_log",
   {
@@ -173,7 +152,6 @@ export const resourceItemsRelations = relations(resourceItems, ({ one, many }) =
     references: [clubs.id],
   }),
   resourceItemStatusLogs: many(resourceItemStatusLog),
-  bookingResourceAssignments: many(bookingResourceAssignments),
 }));
 
 export const poolMaintenanceHoldsRelations = relations(poolMaintenanceHolds, ({ one }) => ({
@@ -194,20 +172,6 @@ export const poolMaintenanceHoldsRelations = relations(poolMaintenanceHolds, ({ 
     references: [users.id],
   }),
 }));
-
-export const bookingResourceAssignmentsRelations = relations(
-  bookingResourceAssignments,
-  ({ one }) => ({
-    resourceItem: one(resourceItems, {
-      fields: [bookingResourceAssignments.resourceItemId],
-      references: [resourceItems.id],
-    }),
-    assignedByUser: one(users, {
-      fields: [bookingResourceAssignments.assignedBy],
-      references: [users.id],
-    }),
-  })
-);
 
 export const resourceItemStatusLogRelations = relations(resourceItemStatusLog, ({ one }) => ({
   resourceItem: one(resourceItems, {

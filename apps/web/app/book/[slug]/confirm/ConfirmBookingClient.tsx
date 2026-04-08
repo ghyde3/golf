@@ -37,15 +37,31 @@ interface ClubProfile {
   };
 }
 
+type PublicAddonItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  sortOrder: number;
+  unitsConsumed: number;
+  resourceTypeId: string | null;
+};
+
+function maxAddonQuantity(a: PublicAddonItem): number {
+  return a.unitsConsumed === 1 ? 4 : 1;
+}
+
 // The inner form — uses Stripe hooks, must be inside <Elements>
 function ConfirmFormInner({
   params,
   club,
   showGuestRegistrationBanner,
+  sessionUser,
 }: {
   params: { slug: string };
   club: ClubProfile | null;
   showGuestRegistrationBanner: boolean;
+  sessionUser: { name: string | null; email: string | null } | null;
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -54,9 +70,13 @@ function ConfirmFormInner({
   const { data: session, status: sessionStatus } = useSession();
 
   const accessToken = session?.accessToken;
-  const sessionEmail = session?.user?.email?.trim() ?? "";
-  const sessionName = session?.user?.name?.trim() ?? "";
-  const isAuthed = sessionStatus === "authenticated" && Boolean(sessionEmail);
+  const sessionEmail =
+    session?.user?.email?.trim() ?? sessionUser?.email?.trim() ?? "";
+  const sessionName =
+    session?.user?.name?.trim() ?? sessionUser?.name?.trim() ?? "";
+  const isAuthed =
+    (sessionStatus === "authenticated" && Boolean(sessionEmail)) ||
+    Boolean(sessionUser?.email?.trim());
   /** Logged-in user with name + email from account — only notes / payment left */
   const contactCompleteFromSession = isAuthed && Boolean(sessionName) && Boolean(sessionEmail);
 
@@ -73,6 +93,8 @@ function ConfirmFormInner({
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [addonCatalog, setAddonCatalog] = useState<PublicAddonItem[]>([]);
+  const [addonQty, setAddonQty] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!isAuthed) return;
@@ -80,9 +102,26 @@ function ConfirmFormInner({
     if (sessionName) setName(sessionName);
   }, [isAuthed, sessionEmail, sessionName]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/api/clubs/public/${params.slug}/addons`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: PublicAddonItem[]) => {
+        if (!cancelled && Array.isArray(data)) {
+          setAddonCatalog(data);
+          const init: Record<string, number> = {};
+          for (const a of data) init[a.id] = 0;
+          setAddonQty((prev) => ({ ...init, ...prev }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [params.slug]);
+
   /** Values sent to the API / Stripe (session wins when signed in so we don’t wait on useState sync). */
-  const guestEmailForBooking =
-    sessionStatus === "authenticated" && sessionEmail ? sessionEmail : email.trim();
+  const guestEmailForBooking = sessionEmail || email.trim();
   const guestNameForBooking = contactCompleteFromSession
     ? sessionName
     : sessionStatus === "authenticated"
@@ -94,7 +133,21 @@ function ConfirmFormInner({
   const timezone = club?.config?.timezone || "America/New_York";
   const bookingFee = parseFloat(club?.bookingFee ?? "0");
   const totalFee = bookingFee * players;
-  const requiresPayment = totalFee > 0 && stripePromise !== null;
+  const addonSubtotalCents = addonCatalog.reduce((sum, a) => {
+    const q = addonQty[a.id] ?? 0;
+    return sum + q * a.priceCents;
+  }, 0);
+  const grandTotalDollars = totalFee + addonSubtotalCents / 100;
+  const requiresPayment = grandTotalDollars > 0 && stripePromise !== null;
+
+  function buildAddOnsPayload(): { addonCatalogId: string; quantity: number }[] {
+    const out: { addonCatalogId: string; quantity: number }[] = [];
+    for (const a of addonCatalog) {
+      const q = addonQty[a.id] ?? 0;
+      if (q > 0) out.push({ addonCatalogId: a.id, quantity: q });
+    }
+    return out;
+  }
 
   const formattedDate = datetime
     ? new Date(datetime).toLocaleDateString("en-US", {
@@ -130,6 +183,10 @@ function ConfirmFormInner({
           piBody.courseId = courseId;
           piBody.datetime = datetime;
         }
+        const addOnsPayload = buildAddOnsPayload();
+        if (addOnsPayload.length > 0) {
+          piBody.addOns = addOnsPayload;
+        }
 
         const piRes = await fetch(`${API_URL}/api/bookings/public/payment-intent`, {
           method: "POST",
@@ -138,6 +195,16 @@ function ConfirmFormInner({
         });
 
         if (piRes.status === 409) {
+          const data = await piRes.json().catch(() => ({}));
+          if (data.code === "ADDON_UNAVAILABLE") {
+            setError(
+              typeof data.name === "string"
+                ? `${data.name} is not available.` 
+                : "An add-on is not available."
+            );
+            setSubmitting(false);
+            return;
+          }
           router.push(`/book/${params.slug}/times?clubId=${clubId}&error=slot_full`);
           return;
         }
@@ -151,8 +218,16 @@ function ConfirmFormInner({
         const piData = await piRes.json();
 
         if (!piData.requiresPayment) {
-          // Club switched to free — fall through to direct booking (shouldn't happen in practice)
-          // Just do direct booking
+          const q = new URLSearchParams({
+            bookingRef: String(piData.bookingRef ?? ""),
+            datetime: String(piData.datetime ?? ""),
+            players: String(players),
+            guestName: guestNameForBooking,
+            guestEmail: guestEmailForBooking,
+            amountPaid: grandTotalDollars.toFixed(2),
+          });
+          router.push(`/book/${params.slug}/success?${q.toString()}`);
+          return;
         } else {
           // Step 2: Confirm card payment in-browser
           if (!stripe || !elements) {
@@ -215,7 +290,7 @@ function ConfirmFormInner({
             players: String(players),
             guestName: guestNameForBooking,
             guestEmail: guestEmailForBooking,
-            amountPaid: (totalFee).toFixed(2),
+            amountPaid: grandTotalDollars.toFixed(2),
           });
           router.push(`/book/${params.slug}/success?${q.toString()}`);
           return;
@@ -236,6 +311,10 @@ function ConfirmFormInner({
         body.courseId = courseId;
         body.datetime = datetime;
       }
+      const freeAddOns = buildAddOnsPayload();
+      if (freeAddOns.length > 0) {
+        body.addOns = freeAddOns;
+      }
 
       const res = await fetch(`${API_URL}/api/bookings/public`, {
         method: "POST",
@@ -244,6 +323,16 @@ function ConfirmFormInner({
       });
 
       if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        if (data.code === "ADDON_UNAVAILABLE") {
+          setError(
+            typeof data.name === "string"
+              ? `${data.name} is not available.`
+              : "An add-on is not available."
+          );
+          setSubmitting(false);
+          return;
+        }
         router.push(`/book/${params.slug}/times?clubId=${clubId}&error=slot_full`);
         return;
       }
@@ -265,6 +354,7 @@ function ConfirmFormInner({
       router.push(`/book/${params.slug}/success?${q.toString()}`);
     } catch {
       setError("Network error. Please try again.");
+    } finally {
       setSubmitting(false);
     }
   }
@@ -312,6 +402,19 @@ function ConfirmFormInner({
           {totalFee > 0 && (
             <p className="relative mt-1.5 text-[13px] text-white/65">
               Booking fee: <span className="font-semibold text-white">${totalFee.toFixed(2)}</span>
+            </p>
+          )}
+          {addonSubtotalCents > 0 && (
+            <p className="relative mt-1.5 text-[13px] text-white/65">
+              Add-ons:{" "}
+              <span className="font-semibold text-white">
+                ${(addonSubtotalCents / 100).toFixed(2)}
+              </span>
+            </p>
+          )}
+          {(totalFee > 0 || addonSubtotalCents > 0) && (
+            <p className="relative mt-1.5 text-[13px] font-semibold text-white">
+              Total: ${grandTotalDollars.toFixed(2)}
             </p>
           )}
           <p className="relative mt-3 inline-flex items-center gap-1 rounded-full border border-ds-gold/35 bg-ds-gold/20 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-ds-gold-light">
@@ -428,6 +531,71 @@ function ConfirmFormInner({
             </>
           )}
 
+          {addonCatalog.length > 0 && (
+            <div className="rounded-[10px] border border-ds-stone bg-white px-3.5 py-3.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
+                Add-ons
+              </p>
+              <ul className="mt-3 space-y-3">
+                {addonCatalog.map((a) => {
+                  const q = addonQty[a.id] ?? 0;
+                  const maxQ = maxAddonQuantity(a);
+                  return (
+                    <li key={a.id} className="flex flex-col gap-1 border-b border-ds-stone/70 pb-3 last:border-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium text-ds-ink">{a.name}</p>
+                          {a.description ? (
+                            <p className="mt-0.5 text-[12px] text-ds-muted">{a.description}</p>
+                          ) : null}
+                          <p className="mt-1 text-[12px] text-ds-muted">
+                            ${(a.priceCents / 100).toFixed(2)} each
+                          </p>
+                        </div>
+                        <div className="flex min-w-[100px] items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
+                            disabled={q <= 0}
+                            onClick={() =>
+                              setAddonQty((prev) => ({
+                                ...prev,
+                                [a.id]: Math.max(0, (prev[a.id] ?? 0) - 1),
+                              }))
+                            }
+                            aria-label={`Decrease ${a.name}`}
+                          >
+                            −
+                          </button>
+                          <span className="w-6 text-center text-sm tabular-nums">{q}</span>
+                          <button
+                            type="button"
+                            className="rounded-lg border border-ds-stone px-2.5 py-1 text-sm text-ds-ink disabled:opacity-40"
+                            disabled={q >= maxQ}
+                            onClick={() =>
+                              setAddonQty((prev) => ({
+                                ...prev,
+                                [a.id]: Math.min(maxQ, (prev[a.id] ?? 0) + 1),
+                              }))
+                            }
+                            aria-label={`Increase ${a.name}`}
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {addonSubtotalCents > 0 && (
+                <p className="mt-3 text-right text-sm font-medium text-ds-ink">
+                  Add-ons subtotal: ${(addonSubtotalCents / 100).toFixed(2)}
+                </p>
+              )}
+            </div>
+          )}
+
           <div>
             <label htmlFor="notes" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-ds-muted">
               Special requests <span className="font-normal normal-case text-ds-muted/80">(optional)</span>
@@ -488,10 +656,10 @@ function ConfirmFormInner({
               <span className="relative z-[1]">
                 {contactCompleteFromSession
                   ? requiresPayment
-                    ? `Pay $${totalFee.toFixed(2)} & confirm`
+                    ? `Pay $${grandTotalDollars.toFixed(2)} & confirm`
                     : "Confirm reservation"
                   : requiresPayment
-                    ? `Pay $${totalFee.toFixed(2)} & Reserve`
+                    ? `Pay $${grandTotalDollars.toFixed(2)} & Reserve`
                     : "Reserve tee time"}
               </span>
             )}
@@ -514,9 +682,11 @@ function ConfirmFormInner({
 function ConfirmForm({
   params,
   showGuestRegistrationBanner,
+  sessionUser,
 }: {
   params: { slug: string };
   showGuestRegistrationBanner: boolean;
+  sessionUser: { name: string | null; email: string | null } | null;
 }) {
   const [club, setClub] = useState<ClubProfile | null>(null);
 
@@ -534,6 +704,7 @@ function ConfirmForm({
           params={params}
           club={club}
           showGuestRegistrationBanner={showGuestRegistrationBanner}
+          sessionUser={sessionUser}
         />
       </Elements>
     );
@@ -545,6 +716,7 @@ function ConfirmForm({
       params={params}
       club={club}
       showGuestRegistrationBanner={showGuestRegistrationBanner}
+      sessionUser={sessionUser}
     />
   );
 }
@@ -552,9 +724,11 @@ function ConfirmForm({
 export function ConfirmBookingClient({
   params,
   showGuestRegistrationBanner,
+  sessionUser = null,
 }: {
   params: { slug: string };
   showGuestRegistrationBanner: boolean;
+  sessionUser?: { name: string | null; email: string | null } | null;
 }) {
   return (
     <Suspense
@@ -564,7 +738,11 @@ export function ConfirmBookingClient({
         </div>
       }
     >
-      <ConfirmForm params={params} showGuestRegistrationBanner={showGuestRegistrationBanner} />
+      <ConfirmForm
+        params={params}
+        showGuestRegistrationBanner={showGuestRegistrationBanner}
+        sessionUser={sessionUser}
+      />
     </Suspense>
   );
 }

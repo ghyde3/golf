@@ -3,12 +3,13 @@ import { Worker } from "bullmq";
 import Redis from "ioredis";
 import { Resend } from "resend";
 import { render } from "@react-email/render";
-import { eq, desc } from "drizzle-orm";
-import { db, failedJobs, bookings, clubConfig } from "@teetimes/db";
+import { eq, desc, and, isNull } from "drizzle-orm";
+import { db, failedJobs, bookings, clubConfig, waitlistEntries } from "@teetimes/db";
 import { formatInTimeZone } from "date-fns-tz";
 import { BookingConfirmationEmail } from "../emails/BookingConfirmation";
 import { BookingReminderEmail } from "../emails/BookingReminder";
 import { BookingCancellationEmail } from "../emails/BookingCancellation";
+import { WaitlistNotifyEmail } from "../emails/WaitlistNotify";
 
 function bullConnection(): Redis {
   return new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: null });
@@ -71,6 +72,78 @@ async function sendConfirmationEmail(bookingId: string): Promise<void> {
     subject: `Tee time confirmed — ${ref}`,
     html,
   });
+}
+
+async function sendWaitlistNotifyEmail(waitlistEntryId: string): Promise<void> {
+  const entry = await db.query.waitlistEntries.findFirst({
+    where: eq(waitlistEntries.id, waitlistEntryId),
+    with: {
+      teeSlot: {
+        with: {
+          course: { with: { club: true } },
+        },
+      },
+    },
+  });
+
+  if (!entry?.teeSlot?.course?.club) return;
+  if (entry.notifiedAt != null) return;
+  if (entry.claimedAt != null) return;
+
+  const club = entry.teeSlot.course.club;
+  const cfg = await db.query.clubConfig.findFirst({
+    where: eq(clubConfig.clubId, club.id),
+    orderBy: [desc(clubConfig.effectiveFrom)],
+  });
+  const tz = cfg?.timezone ?? "America/New_York";
+  const whenLabel = `${formatInTimeZone(
+    entry.teeSlot.datetime,
+    tz,
+    "EEE MMM d, h:mm a"
+  )} (${tz})`;
+
+  const to = entry.email.trim();
+  if (!to) return;
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3001";
+  const claimUrl = `${baseUrl.replace(/\/$/, "")}/api/waitlist/claim?token=${entry.token}`;
+
+  const html = await render(
+    React.createElement(WaitlistNotifyEmail, {
+      clubName: club.name,
+      whenLabel,
+      claimUrl,
+      playersCount: entry.playersCount,
+    })
+  );
+
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    console.info("[email] skip waitlist notify (no RESEND_API_KEY)", {
+      to,
+      waitlistEntryId,
+    });
+    return;
+  }
+
+  const resend = new Resend(key);
+  const from = process.env.RESEND_FROM || "TeeTimes <onboarding@resend.dev>";
+  await resend.emails.send({
+    from,
+    to,
+    subject: `A spot opened — ${club.name}`,
+    html,
+  });
+
+  await db
+    .update(waitlistEntries)
+    .set({ notifiedAt: new Date() })
+    .where(
+      and(eq(waitlistEntries.id, entry.id), isNull(waitlistEntries.notifiedAt))
+    );
 }
 
 async function sendReminderEmail(bookingId: string): Promise<void> {
@@ -140,6 +213,10 @@ async function processJob(
   }
   if (name === "email:booking-reminder") {
     await sendReminderEmail(String(data.bookingId));
+    return;
+  }
+  if (name === "email:waitlist-notify") {
+    await sendWaitlistNotifyEmail(String(data.waitlistEntryId ?? ""));
     return;
   }
   if (name === "email:booking-cancellation") {

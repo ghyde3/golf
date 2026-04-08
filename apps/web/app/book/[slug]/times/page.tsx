@@ -3,23 +3,15 @@
 import { Suspense, useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
+import { SlotRow, type TimesSlot as Slot } from "./SlotRow";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-interface Slot {
-  id: string | null;
-  datetime: string;
-  maxPlayers: number;
-  bookedPlayers: number;
-  status: string;
-  price: number | null;
-  slotType: string;
-}
 
 interface ClubProfile {
   id: string;
   name: string;
   slug: string;
+  waitlistEnabled?: boolean;
   courses: { id: string; name: string; holes: number }[];
   config: {
     timezone: string;
@@ -293,6 +285,8 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
                             available={isAvailable(slot)}
                             timezone={timezone}
                             onSelect={() => selectSlot(slot)}
+                            clubSlug={params.slug}
+                            waitlistEnabled={club?.waitlistEnabled === true}
                           />
                         ))}
                       </ul>
@@ -315,6 +309,8 @@ function TimesPageInner({ params }: { params: { slug: string } }) {
                             available={isAvailable(slot)}
                             timezone={timezone}
                             onSelect={() => selectSlot(slot)}
+                            clubSlug={params.slug}
+                            waitlistEnabled={club?.waitlistEnabled === true}
                           />
                         ))}
                       </ul>
@@ -341,56 +337,5 @@ export default function TimesPage({ params }: { params: { slug: string } }) {
     >
       <TimesPageInner params={params} />
     </Suspense>
-  );
-}
-
-function SlotRow({
-  slot,
-  available,
-  timezone,
-  onSelect,
-}: {
-  slot: Slot;
-  available: boolean;
-  timezone: string;
-  onSelect: () => void;
-}) {
-  const spots = slot.maxPlayers - slot.bookedPlayers;
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={available ? onSelect : undefined}
-        disabled={!available}
-        className={`flex w-full items-center gap-3 border-b border-ds-stone px-4 py-3 text-left transition-colors ${
-          available ? "cursor-pointer bg-ds-warm-white hover:bg-ds-cream" : "cursor-not-allowed opacity-40"
-        }`}
-      >
-        <span
-          className={`min-w-[72px] font-display text-[15px] ${available ? "text-ds-ink" : "text-ds-muted"}`}
-        >
-          {formatTime(slot.datetime, timezone)}
-        </span>
-        <div className="flex flex-1 flex-wrap items-center gap-1">
-          {Array.from({ length: slot.maxPlayers }).map((_, i) => (
-            <span
-              key={i}
-              className={`h-[9px] w-[9px] rounded-full ${i < slot.bookedPlayers ? "bg-ds-stone" : "bg-ds-grass"}`}
-            />
-          ))}
-          <span className={`ml-1 text-[11px] ${available ? "text-ds-muted" : "text-ds-muted"}`}>
-            {available ? `${spots} spot${spots !== 1 ? "s" : ""}` : "Full"}
-          </span>
-        </div>
-        {slot.price != null && (
-          <span className={`text-[13px] font-semibold ${available ? "text-ds-fairway" : "text-ds-muted"}`}>
-            ${slot.price}
-          </span>
-        )}
-        <span className="text-ds-stone" aria-hidden>
-          ›
-        </span>
-      </button>
-    </li>
   );
 }

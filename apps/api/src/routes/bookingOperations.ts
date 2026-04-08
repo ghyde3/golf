@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, isNull, desc, sql, gte } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, gte, asc } from "drizzle-orm";
 import {
   db,
   bookings,
@@ -7,6 +7,7 @@ import {
   teeSlots,
   courses,
   clubConfig,
+  waitlistEntries,
 } from "@teetimes/db";
 import { CreateBookingSchema } from "@teetimes/validators";
 import { authenticate } from "../middleware/auth";
@@ -461,6 +462,23 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     });
 
     await invalidateAvailabilityCache(club.id, slot.courseId, dateStr);
+
+    const firstWaiting = await db.query.waitlistEntries.findFirst({
+      where: and(
+        eq(waitlistEntries.teeSlotId, slot.id),
+        isNull(waitlistEntries.notifiedAt)
+      ),
+      orderBy: [asc(waitlistEntries.createdAt)],
+    });
+
+    if (firstWaiting) {
+      await enqueueEmail("email:waitlist-notify", {
+        waitlistEntryId: firstWaiting.id,
+        clubName: club.name,
+        clubSlug: club.slug,
+        whenLabel: slot.datetime.toISOString(),
+      });
+    }
 
     if (booking.guestEmail) {
       await enqueueEmail("email:booking-cancellation", {

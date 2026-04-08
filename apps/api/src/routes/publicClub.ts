@@ -7,8 +7,12 @@ import {
   asc,
   sql,
   and,
+  or,
   exists,
   inArray,
+  isNull,
+  lt,
+  lte,
   type SQL,
 } from "drizzle-orm";
 import {
@@ -21,9 +25,11 @@ import {
   bookingPlayers,
   clubTagDefinitions,
   clubTagAssignments,
+  platformSettings,
+  waitlistEntries,
 } from "@teetimes/db";
 import { clubPublicSearchSql } from "../lib/searchQuery";
-import { PublicBookingBodySchema } from "@teetimes/validators";
+import { JoinWaitlistSchema, PublicBookingBodySchema } from "@teetimes/validators";
 import { generateUniqueBookingRef } from "../lib/bookingRef";
 import {
   getCachedAvailability,
@@ -36,6 +42,30 @@ import { enqueueEmail, getEmailQueue } from "../lib/queue";
 import { getAuthPayload } from "../lib/auth";
 
 const router = Router();
+
+async function waitlistQueuePosition(
+  teeSlotId: string,
+  createdAt: Date,
+  entryId: string
+): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(waitlistEntries)
+    .where(
+      and(
+        eq(waitlistEntries.teeSlotId, teeSlotId),
+        isNull(waitlistEntries.notifiedAt),
+        or(
+          lt(waitlistEntries.createdAt, createdAt),
+          and(
+            eq(waitlistEntries.createdAt, createdAt),
+            lte(waitlistEntries.id, entryId)
+          )
+        )
+      )
+    );
+  return Number(row?.n ?? 0);
+}
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -306,6 +336,11 @@ router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
       )
       .orderBy(asc(clubTagDefinitions.sortOrder), asc(clubTagDefinitions.slug));
 
+    const waitlistFlagRow = await db.query.platformSettings.findFirst({
+      where: eq(platformSettings.key, "features.waitlist"),
+    });
+    const waitlistEnabled = waitlistFlagRow?.value === true;
+
     res.json({
       id: club.id,
       name: club.name,
@@ -314,6 +349,7 @@ router.get("/clubs/public/:slug", publicRateLimit, async (req, res) => {
       heroImageUrl: club.heroImageUrl,
       bookingFee: club.bookingFee != null ? String(club.bookingFee) : null,
       primaryColor: effectiveConfig?.primaryColor ?? "#16a34a",
+      waitlistEnabled,
       tags: tagRows.map((t) => ({ slug: t.slug, label: t.label })),
       courses: club.courses.map((c) => ({
         id: c.id,
@@ -868,6 +904,123 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
       return;
     }
     console.error("Error creating booking:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/clubs/public/:slug/waitlist", publicRateLimit, async (req, res) => {
+  const parsed = JoinWaitlistSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res
+      .status(400)
+      .json({ error: "Invalid request", details: parsed.error.flatten() });
+    return;
+  }
+
+  const slug = String(req.params.slug);
+  const body = parsed.data;
+  const emailNorm = body.email.trim().toLowerCase();
+
+  try {
+    const waitlistFlagRow = await db.query.platformSettings.findFirst({
+      where: eq(platformSettings.key, "features.waitlist"),
+    });
+    if (waitlistFlagRow?.value !== true) {
+      res.status(403).json({ code: "WAITLIST_DISABLED" });
+      return;
+    }
+
+    const club = await db.query.clubs.findFirst({
+      where: eq(clubs.slug, slug),
+    });
+    if (!club || club.status === "suspended") {
+      res.status(404).json({ error: "Club not found" });
+      return;
+    }
+
+    const slot = await db.query.teeSlots.findFirst({
+      where: eq(teeSlots.id, body.teeSlotId),
+      with: { course: true },
+    });
+    if (!slot || slot.course.clubId !== club.id) {
+      res.status(404).json({ error: "Tee slot not found" });
+      return;
+    }
+
+    const maxP = slot.maxPlayers ?? 4;
+    const booked = slot.bookedPlayers ?? 0;
+    const status = slot.status ?? "open";
+    if (status !== "open") {
+      res.status(409).json({ code: "SLOT_NOT_FULL" });
+      return;
+    }
+    if (booked < maxP) {
+      res.status(409).json({ code: "SLOT_NOT_FULL" });
+      return;
+    }
+
+    const playersToWait = Math.min(Math.max(1, body.playersCount), maxP);
+
+    const existing = await db.query.waitlistEntries.findFirst({
+      where: and(
+        eq(waitlistEntries.teeSlotId, body.teeSlotId),
+        eq(waitlistEntries.email, emailNorm)
+      ),
+    });
+    if (existing) {
+      const position = await waitlistQueuePosition(
+        existing.teeSlotId,
+        existing.createdAt!,
+        existing.id
+      );
+      res.status(409).json({ code: "ALREADY_ON_WAITLIST", position });
+      return;
+    }
+
+    try {
+      const [inserted] = await db
+        .insert(waitlistEntries)
+        .values({
+          teeSlotId: body.teeSlotId,
+          email: emailNorm,
+          name: body.name.trim(),
+          playersCount: playersToWait,
+        })
+        .returning();
+
+      if (!inserted) {
+        res.status(500).json({ error: "Failed to join waitlist" });
+        return;
+      }
+
+      const position = await waitlistQueuePosition(
+        inserted.teeSlotId,
+        inserted.createdAt!,
+        inserted.id
+      );
+      res.status(201).json({ position });
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") {
+        const dup = await db.query.waitlistEntries.findFirst({
+          where: and(
+            eq(waitlistEntries.teeSlotId, body.teeSlotId),
+            eq(waitlistEntries.email, emailNorm)
+          ),
+        });
+        if (dup) {
+          const position = await waitlistQueuePosition(
+            dup.teeSlotId,
+            dup.createdAt!,
+            dup.id
+          );
+          res.status(409).json({ code: "ALREADY_ON_WAITLIST", position });
+          return;
+        }
+      }
+      throw e;
+    }
+  } catch (err) {
+    console.error("Waitlist join error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

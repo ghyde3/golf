@@ -14,5 +14,5 @@ export interface GeneratedSlot {
   bookedPlayers: number;
   status: "open" | "blocked";
   price: number | null;
-  slotType: "18hole" | "9hole";
+  slotType: "18hole" | "9hole" | "27hole" | "36hole";
 }

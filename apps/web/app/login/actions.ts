@@ -11,6 +11,10 @@ type SignInResult = {
   error?: string;
 };
 
+type LoginPrecheck =
+  | { ok: true; roles: UserRole[] }
+  | { ok: false; reason: "auth" | "unavailable" };
+
 /**
  * Same source as `authorize` in auth.ts. We need roles here because `auth()`
  * does not see the new session cookie in the same server-action request as
@@ -19,25 +23,36 @@ type SignInResult = {
 async function fetchRolesForRedirect(
   email: string,
   password: string
-): Promise<UserRole[] | null> {
-  const res = await fetch(`${apiBaseUrl()}/api/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) return null;
+): Promise<LoginPrecheck> {
+  let res: Response;
+  try {
+    res = await fetch(`${apiBaseUrl()}/api/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
+  if (!res.ok) return { ok: false, reason: "auth" };
   const data = (await res.json()) as { user?: { roles?: UserRole[] } };
-  return data.user?.roles ?? null;
+  const roles = data.user?.roles ?? null;
+  if (roles === null) return { ok: false, reason: "auth" };
+  return { ok: true, roles };
 }
 
 export async function loginAction(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
 
-  const roles = await fetchRolesForRedirect(email, password);
-  if (!roles) {
+  const precheck = await fetchRolesForRedirect(email, password);
+  if (!precheck.ok) {
+    if (precheck.reason === "unavailable") {
+      redirect("/login?error=unavailable");
+    }
     redirect("/login?error=auth");
   }
+  const { roles } = precheck;
 
   let result: SignInResult | undefined;
   try {

@@ -18,6 +18,7 @@ import {
   Flag,
   LayoutDashboard,
   LogOut,
+  Package,
   Settings,
   Users,
 } from "lucide-react";
@@ -185,6 +186,7 @@ export function Sidebar({
 
   const management: NavItem[] = [
     { href: `${base}/courses`, label: "Courses", icon: <Flag /> },
+    { href: `${base}/resources`, label: "Resources", icon: <Package /> },
     { href: `${base}/staff`, label: "Staff", icon: <Users /> },
     { href: `${base}/settings`, label: "Settings", icon: <Settings /> },
     { href: `${base}/reports`, label: "Reports", icon: <BarChart3 /> },

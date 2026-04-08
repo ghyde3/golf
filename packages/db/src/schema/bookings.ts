@@ -28,6 +28,10 @@ export const teeSlots = pgTable(
   },
   (table) => [
     check("no_overbooking", sql`${table.bookedPlayers} <= ${table.maxPlayers}`),
+    check(
+      "tee_slots_slot_type_valid",
+      sql`${table.slotType} IN ('9hole', '18hole', '27hole', '36hole')`
+    ),
   ]
 );
 

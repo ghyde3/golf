@@ -3,18 +3,9 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { HomeSearchBar } from "@/components/home/HomeSearchBar";
 import { ClubCard } from "@/components/home/ClubCard";
+import { fetchPublicJson } from "@/lib/public-api-fetch";
 import { publicApiUrl } from "@/lib/public-api-url";
 import type { PublicClubListItem } from "@/components/home/types";
-
-async function getJson<T>(url: string): Promise<T | null> {
-  try {
-    const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) return null;
-    return res.json() as Promise<T>;
-  } catch {
-    return null;
-  }
-}
 
 type ClubProfile = {
   id: string;
@@ -35,11 +26,13 @@ export default async function Home() {
   const today = new Date().toISOString().split("T")[0];
 
   const [featuredPayload, newPayload, tagCatalogPayload] = await Promise.all([
-    getJson<{ clubs: PublicClubListItem[] }>(`${api}/api/clubs/public?limit=8`),
-    getJson<{ clubs: PublicClubListItem[] }>(
+    fetchPublicJson<{ clubs: PublicClubListItem[] }>(
+      `${api}/api/clubs/public?limit=8`
+    ),
+    fetchPublicJson<{ clubs: PublicClubListItem[] }>(
       `${api}/api/clubs/public?limit=4&sort=new`
     ),
-    getJson<{
+    fetchPublicJson<{
       tags: {
         slug: string;
         label: string;
@@ -77,13 +70,13 @@ export default async function Home() {
   } | null = null;
 
   if (first) {
-    const profile = await getJson<ClubProfile>(
+    const profile = await fetchPublicJson<ClubProfile>(
       `${api}/api/clubs/public/${encodeURIComponent(first.slug)}`
     );
     const courseId = profile?.courses?.[0]?.id;
     const tz = profile?.config?.timezone ?? "America/New_York";
     if (profile?.id && courseId) {
-      const avail = await getJson<AvailSlot[]>(
+      const avail = await fetchPublicJson<AvailSlot[]>(
         `${api}/api/clubs/${profile.id}/availability?date=${encodeURIComponent(
           today
         )}&courseId=${encodeURIComponent(courseId)}&players=2&full=1`

@@ -1,4 +1,5 @@
 import { SearchClient } from "./SearchClient";
+import { fetchPublicJson } from "@/lib/public-api-fetch";
 import { publicApiUrl } from "@/lib/public-api-url";
 import type { PublicClubListItem } from "@/components/home/types";
 import type { PublicTagCatalogItem } from "./types";
@@ -35,24 +36,21 @@ export default async function SearchPage({
   if (sort) url.searchParams.set("sort", sort);
   url.searchParams.set("limit", "20");
 
-  const [catalogRes, clubsRes] = await Promise.all([
-    fetch(`${api}/api/clubs/public/tags`, { cache: "no-store" }),
-    fetch(url.toString(), { cache: "no-store" }),
+  const [catalogPayload, clubsPayload] = await Promise.all([
+    fetchPublicJson<{ tags: PublicTagCatalogItem[] }>(
+      `${api}/api/clubs/public/tags`
+    ),
+    fetchPublicJson<{ clubs: PublicClubListItem[] }>(url.toString()),
   ]);
 
-  const catalogPayload = catalogRes.ok
-    ? ((await catalogRes.json()) as { tags: PublicTagCatalogItem[] })
-    : { tags: [] as PublicTagCatalogItem[] };
-  const tagCatalog = catalogPayload.tags ?? [];
+  const tagCatalog = catalogPayload?.tags ?? [];
 
   let tagLabel = "";
   if (tag) {
     tagLabel = tagCatalog.find((t) => t.slug === tag)?.label ?? tag;
   }
 
-  const data = clubsRes.ok
-    ? ((await clubsRes.json()) as { clubs: PublicClubListItem[] })
-    : { clubs: [] as PublicClubListItem[] };
+  const clubs = clubsPayload?.clubs ?? [];
 
   return (
     <SearchClient
@@ -63,7 +61,7 @@ export default async function SearchPage({
       initialDate={date}
       initialPlayers={String(players)}
       initialSort={sort}
-      clubs={data.clubs}
+      clubs={clubs}
     />
   );
 }

@@ -9,6 +9,7 @@
     "lint": "turbo lint",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
+    "typecheck:web": "pnpm --filter @teetimes/web exec tsc --noEmit",
     "seed": "tsx packages/db/src/seed.ts",
     "seed:inventory": "tsx packages/db/src/seedInventory.ts",
     "seed:bookings": "tsx packages/db/src/seedBookings.ts",

@@ -1,4 +1,6 @@
 import type { NextAuthConfig } from "next-auth";
+import type { Session } from "next-auth";
+import type { JWT } from "next-auth/jwt";
 import type { UserRole } from "@teetimes/types";
 
 const secret = process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET;
@@ -20,7 +22,7 @@ export default {
     signIn: "/login",
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user }: { token: JWT; user?: unknown }) {
       if (user) {
         const u = user as {
           roles?: UserRole[];
@@ -31,10 +33,17 @@ export default {
       }
       return token;
     },
-    async session({ session, token }) {
+    async session({
+      session,
+      token,
+    }: {
+      session: Session;
+      token: JWT;
+    }) {
       if (session.user) {
-        session.user.id = token.sub ?? "";
-        session.user.roles = (token.roles as UserRole[]) ?? [];
+        const t = token as JWT & { sub?: string };
+        session.user.id = t.sub ?? "";
+        session.user.roles = (t.roles as UserRole[]) ?? [];
       }
       session.accessToken = token.accessToken as string;
       return session;

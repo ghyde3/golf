@@ -1,6 +1,6 @@
 # TeeTimes — Feature Inventory
 
-> Auto-generated from a full codebase scan on 2026-04-08.
+> Living inventory; last updated 2026-04-08 (Roadmap C: golfer profile, scorecards, calendar export, club reports, booking modifications, reminders, no-show automation).
 > This document replaces the earlier `plan.md` roadmap, which is now archived.
 
 ---
@@ -13,13 +13,14 @@
 - **Club profile** — Public page per slug with hero image, courses list, hours (default + per-day schedule), and a sticky "Book a Tee Time" CTA.
 - **Tee time picker** — Seven-day date chips, course tabs, player stepper (1–4), morning/afternoon sections, "soonest available" chips, and real-time availability from the API.
 - **Booking confirmation** — Multi-step wizard: contact details → optional add-ons (quantity picker with per-add-on max) → payment. Supports Stripe (CardElement + PaymentIntent) when fees apply, or a free/unpaid path when no charges are due. 409 conflict handling redirects back to times if the slot fills.
-- **Success page** — Ticket-style card with booking reference, amount charged, date/time in club timezone, and CTAs to book again or view "My Bookings."
+- **Success page** — Ticket-style card with booking reference, amount charged, date/time in club timezone, client-side **Add to calendar** (`.ics` download via `ical-generator`), and CTAs to book again or view "My Bookings."
 - **Waitlist** — When a slot is full and the platform feature flag is enabled, guests can join a waitlist (name, email, players). On cancellation the next entry receives an email with a 24-hour claim link that completes the booking in a single GET.
 - **Guest registration banner** — Unauthenticated users see a prompt to register during the booking flow; post-registration redirects back to where they left off.
 
 ## Authentication & User Management
 
 - **Credentials login** — Email/password via NextAuth v5 (Auth.js) Credentials provider; the web app posts to the Express API, receives a JWT, and stores it in the NextAuth session.
+- **Golfer profile** — Optional `phone` and JSON `notification_prefs` (e.g. `reminders: false` to opt out of email reminders). `GET`/`PATCH /api/me/profile` (authenticated).
 - **JWT auth** — Shared `JWT_SECRET`/`NEXTAUTH_SECRET` between Express and Next.js. Tokens carry `userId` and `roles[]`. Purpose-scoped tokens for guest cancel (48 h), staff invite (7 d), and password reset (1 h).
 - **Registration** — Golfer self-registration with duplicate-email detection (409).
 - **Forgot / reset password** — Rate-limited email with a 1-hour reset token; React Email template; redirect flow back to login on success.
@@ -29,8 +30,11 @@
 
 ## Golfer Area
 
-- **My Bookings** — Upcoming and past tabs with pagination, cancellation eligibility per club policy, payment status badges, and timezone-aware date formatting.
+- **My Bookings** — Upcoming and past tabs with pagination, cancellation eligibility per club policy, payment status badges, timezone-aware date formatting, **Add to calendar** on each booking, and a link to **Account settings**.
 - **Cancel booking** — Enforces the club's cancellation window (whole-hour comparison). On cancel: slot capacity restored, add-on resources freed, waitlist notified, cancellation email sent.
+- **Modify booking (player count)** — Upcoming bookings within the cancellation window: **Modify** opens a dialog to change `playersCount` (1–4) via `PATCH /api/bookings/:id`; staff bypass the window; golfers get `403` outside the window (`OUTSIDE_WINDOW`) or `409` if the slot is full (`SLOT_FULL`).
+- **Scorecards** — Past rounds: **Log score** / **Edit score** opens a hole-by-hole modal (par from club-configured hole data when available). `POST`/`GET /api/me/scorecards`; one scorecard per booking; past tee time only.
+- **Account** — `/account`: profile form (name, phone, email read-only, reminder toggle), and **score history** listing logged rounds (date, course, club, total, holes completed).
 
 ## Club Staff Dashboard
 
@@ -56,6 +60,7 @@
 ### Courses
 
 - **Course CRUD** — Inline add/edit for course name and hole count (9 or 18).
+- **Hole configuration** — Per course, staff can set **par** (3/4/5 per hole), optional handicap index and yardage, persisted in `course_holes`. `GET`/`PUT /api/clubs/:clubId/courses/:courseId/holes` (staff-only for writes; authenticated golfers can read par for scorecards).
 
 ### Add-Ons
 
@@ -77,8 +82,11 @@
 ### Reports
 
 - **Daily series** — Bookings, players, combined revenue, occupancy % over a configurable period (7 / 30 / 90 days).
+- **No-shows in series** — Per-day **no-show** counts and **no-show rate** (vs confirmed + no-show tee times in range) in summary cards and the daily grid.
 - **Booking sources** — Online vs staff counts in totals.
+- **Scorecard tab (non-PII)** — Lazy-loaded aggregates: completion rate (scored rounds vs past confirmed bookings), rounds scored, per-hole average score vs par (where hole config exists), and distribution buckets (under par / at par / bogey / double+). No golfer identity in the payload. Hole-level table rows need **course hole** configuration; without it, KPIs and distribution may still appear while per-hole averages stay empty.
 - **Client-side period switching** — Refetches with bearer token; updates URL via `history.replaceState`.
+- **Reports tabs** — **Bookings** (existing daily series + no-show metrics) vs **Scorecard** (aggregates above).
 
 ### Settings
 
@@ -133,6 +141,11 @@
 ## API & Backend Services
 
 - **Express.js** on port 3001 with CORS, structured route mounting (public before parameterized), and `GET /health`.
+- **Golfer profile** — `GET`/`PATCH /api/me/profile` (authenticated).
+- **Scorecards** — `POST`/`GET /api/me/scorecards` (authenticated); booking ownership and past-round rules enforced on submit.
+- **Course holes** — `GET /api/clubs/:clubId/courses/:courseId/holes` mounted **before** the club staff router so any authenticated user can read par data; `PUT` remains on the staff-gated club resources router.
+- **Booking modification** — `PATCH /api/bookings/:id` supports `playersCount`-only updates for the booking owner (within cancellation window) or staff; slot moves unchanged.
+- **Club reports (scorecards)** — `GET /api/clubs/:clubId/manage/reports/scorecards` returns aggregate, non-PII stats for the club’s courses (staff access).
 - **Slot generation** — Tee slots are generated in-memory from club config (interval, hours, timezone) on each request. Only booked/blocked slots are persisted in the `tee_slots` table.
 - **Availability merge** — Resolves effective config for the target date, generates slots, merges with DB rows, and filters by capacity / future / open status. Optional full-grid mode for admin tee sheet.
 - **Redis availability cache** — JSON cache with 30-second TTL and `SCAN`+`DEL` pattern-based invalidation on booking/cancel/block. Graceful no-op when Redis is unavailable.
@@ -141,22 +154,25 @@
 - **Search engine** — Tokenized text matching with stopword removal, hole-count shortcuts, escaped ILIKE patterns, course name subqueries, and geo-distance sorting.
 - **Stripe integration** — `PaymentIntent` creation during booking, `confirm-payment` endpoint, and a raw-body webhook listener for `invoice.paid`, `invoice.payment_failed`, and `payment_intent.payment_failed` events.
 - **Waitlist** — Join queue, token-based claim (HTML error pages or redirect), notifiedAt tracking, 24-hour expiry.
+- **No-show jobs** — After a booking is confirmed, a delayed BullMQ job (`booking:auto-noshow` on the `booking` queue) runs ~15 minutes after tee time; if no check-in, the booking is marked `no_show`, capacity is restored, and the next waitlist candidate may be notified. Same enqueue on public and staff confirmation paths.
 
 ## Email System
 
-- **BullMQ worker** — Processes the `email` queue on Redis with concurrency 2, exponential backoff (3 retries), and failed-job logging to the `failed_jobs` table.
+- **BullMQ workers** — **`email` queue** — concurrency 2, exponential backoff (3 retries), failed-job logging to `failed_jobs`. **`booking` queue** — separate worker for booking lifecycle jobs (e.g. auto no-show).
 - **React Email templates** — `BookingConfirmation` (ref, players, add-ons, total, manage link), `BookingCancellation`, `BookingReminder`, `PasswordReset` (1-hour expiry note), `WaitlistNotify` (claim CTA, 24-hour expiry).
+- **Reminders** — Scheduled ~24h before tee time when far enough in the future; **user** bookings use `users.email` and respect `notification_prefs.reminders === false`; guest bookings use the booking’s guest email only (no account prefs).
 - **Staff invite** — Inline HTML email with set-password link.
 - **Resend integration** — Sends via Resend when `RESEND_API_KEY` is set; logs to console otherwise (safe for local dev).
 
 ## Database
 
 - **PostgreSQL 16** via Docker Compose on `localhost:5432`.
-- **Drizzle ORM** with 8 migrations and full relational schema.
+- **Drizzle ORM** with **9** migrations and full relational schema.
 - **Core tables** — `clubs`, `club_config` (versioned), `courses`, `tee_slots`, `bookings`, `booking_players`.
+- **Course holes & scorecards** — `course_holes` (per-hole par, optional handicap/yardage); `round_scorecards` and `round_scorecard_holes` (one scorecard per booking, hole-by-hole scores).
 - **Add-ons** — `addon_catalog`, `booking_addon_lines`, `booking_resource_assignments`.
 - **Resources** — `resource_types`, `resource_items`, `pool_maintenance_holds`, `resource_item_status_log`, `resource_restock_log`.
-- **Users & auth** — `users`, `user_roles`.
+- **Users & auth** — `users` (optional `phone`, JSON `notification_prefs`), `user_roles`.
 - **Platform** — `platform_settings` (key-value JSON), `announcements`, `audit_log`, `invoices`, `club_tag_definitions`, `club_tag_assignments`, `waitlist_entries`, `failed_jobs`.
 - **Seed scripts** — Base seed (clubs, courses, configs, users, tags, inventory), booking density seed (4-day synthetic slots/bookings), inventory seed (rentals, consumables, services with items), tag seed, and destructive reset.
 
@@ -166,11 +182,12 @@
 |---------|---------|
 | `@teetimes/db` | Drizzle schema, client, migrations, and seed scripts |
 | `@teetimes/types` | `UserRole`, `JWTPayload`, `GeneratedSlot` TypeScript interfaces |
-| `@teetimes/validators` | Zod schemas for all API inputs (auth, bookings, clubs, courses, add-ons, resources, announcements, tags, platform settings, billing, waitlist) |
+| `@teetimes/validators` | Zod schemas for API inputs (auth, bookings, clubs, courses, add-ons, resources, announcements, tags, platform settings, billing, waitlist, **profile**, **course holes**, **scorecards**) |
 
 ## UI & Design System
 
 - **Next.js 14** App Router with server components, server actions, and client components.
+- **Calendar export** — `ical-generator` (client-only) for `.ics` downloads on the success page and My Bookings.
 - **Tailwind CSS** with custom design tokens (`ds-body-bg`, `ds-ink`, `fairway`, `warm-white`, etc.).
 - **Radix UI** primitives — Dialog, AlertDialog, Tooltip, Slot.
 - **Sonner** for toast notifications.

@@ -17,6 +17,7 @@ export type ReportsPayload = {
     revenueGreenFees: number;
     revenueAddons: number;
     occupancyPct: number;
+    noShows: number;
   }[];
   totals: {
     bookings: number;
@@ -24,6 +25,8 @@ export type ReportsPayload = {
     revenueGreenFees: number;
     revenueAddons: number;
     occupancyPct: number;
+    noShows: number;
+    noShowRate: number;
     sources: { online: number; staff: number };
   };
 };
@@ -253,7 +256,7 @@ export function ReportsClient({
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
               <div className="rounded-xl border border-stone bg-white p-4 shadow-sm border-t-2 border-t-fairway">
                 <p className="text-xs font-bold uppercase tracking-widest text-muted">
                   Bookings ({data.days}d)
@@ -286,6 +289,28 @@ export function ReportsClient({
                   {data.totals.occupancyPct}%
                 </p>
               </div>
+              <div className="rounded-xl border border-stone bg-white p-4 shadow-sm border-t-2 border-t-stone">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted">
+                  No-shows ({data.days}d)
+                </p>
+                <p className="mt-2 font-display text-3xl text-ink tabular-nums">
+                  {data.totals.noShows}
+                </p>
+                <p className="mt-1 text-[11px] text-muted">
+                  Tee times (UTC day) marked no-show
+                </p>
+              </div>
+              <div className="rounded-xl border border-stone bg-white p-4 shadow-sm border-t-2 border-t-stone/80">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted">
+                  No-show rate
+                </p>
+                <p className="mt-2 font-display text-3xl text-ink tabular-nums">
+                  {data.totals.noShowRate}%
+                </p>
+                <p className="mt-1 text-[11px] text-muted">
+                  Of confirmed + no-show tee times in range
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -314,10 +339,11 @@ export function ReportsClient({
                 </p>
               ) : (
                 <>
-                  <div className="grid grid-cols-[minmax(0,1fr)_72px_72px_88px_1fr] border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[minmax(0,1fr)_80px_80px_96px_1fr]">
+                  <div className="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]">
                     <span>Date</span>
                     <span className="text-right">Bookings</span>
                     <span className="text-right">Players</span>
+                    <span className="text-right">No-shows</span>
                     <span className="text-right">Revenue</span>
                     <span />
                   </div>
@@ -325,7 +351,7 @@ export function ReportsClient({
                     {data.series.map((s) => (
                       <div
                         key={s.date}
-                        className="grid grid-cols-[minmax(0,1fr)_72px_72px_88px_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_80px_80px_96px_1fr]"
+                        className="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]"
                       >
                         <span className="text-sm font-medium text-ink">
                           {formatDay(s.date)}
@@ -335,6 +361,9 @@ export function ReportsClient({
                         </span>
                         <span className="text-right text-sm tabular-nums text-ink">
                           {s.players}
+                        </span>
+                        <span className="text-right text-sm tabular-nums text-ink">
+                          {s.noShows}
                         </span>
                         <span className="text-right text-sm tabular-nums text-ink">
                           {usd.format(s.revenueGreenFees + s.revenueAddons)}

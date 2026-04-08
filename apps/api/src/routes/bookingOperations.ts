@@ -24,7 +24,7 @@ import {
 } from "../lib/auth";
 import { generateUniqueBookingRef } from "../lib/bookingRef";
 import { invalidateAvailabilityCache } from "../lib/availabilityCache";
-import { enqueueEmail } from "../lib/queue";
+import { enqueueBookingJob, enqueueEmail } from "../lib/queue";
 import {
   signGuestCancelToken,
   verifyGuestCancelToken,
@@ -939,6 +939,16 @@ router.post("/", authenticate, async (req, res) => {
     await enqueueEmail("email:booking-confirmation", {
       bookingId: booking.id,
     });
+
+    const noShowDelay =
+      new Date(updatedSlot.datetime).getTime() + 15 * 60 * 1000 - Date.now();
+    if (noShowDelay > 0) {
+      await enqueueBookingJob(
+        "booking:auto-noshow",
+        { bookingId: booking.id },
+        { delay: noShowDelay }
+      );
+    }
 
     res.status(201).json({
       id: booking.id,

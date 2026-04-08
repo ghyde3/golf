@@ -540,11 +540,13 @@ router.get("/reports", async (req, res) => {
     revenueGreenFees: number;
     revenueAddons: number;
     occupancyPct: number;
+    noShows: number;
   }[] = [];
 
   let totalBookings = 0;
   let totalPlayers = 0;
   let totalRevenueGreenFees = 0;
+  let noShowsTotal = 0;
   const dailyOccupancyRaw: number[] = [];
 
   const configRows = await db.query.clubConfig.findMany({
@@ -577,6 +579,21 @@ router.get("/reports", async (req, res) => {
         eq(courses.clubId, clubId),
         gte(bookings.createdAt, rangeStart),
         lt(bookings.createdAt, rangeEnd)
+      )
+    );
+
+  const [confirmedForRateRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(courses.clubId, clubId),
+        inArray(bookings.status, ["confirmed", "no_show"]),
+        gte(teeSlots.datetime, rangeStart),
+        lt(teeSlots.datetime, rangeEnd)
       )
     );
 
@@ -636,6 +653,21 @@ router.get("/reports", async (req, res) => {
         )
       );
 
+    const [noShowRow] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(bookings)
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          isNull(bookings.deletedAt),
+          eq(courses.clubId, clubId),
+          eq(bookings.status, "no_show"),
+          gte(teeSlots.datetime, dayStart),
+          lt(teeSlots.datetime, dayEnd)
+        )
+      );
+
     const totalSlots = totalSlotsForDay(configRows, courseCount, dateStr);
     const occupiedSlots = occRow?.occupied ?? 0;
     const occupancyRaw =
@@ -649,6 +681,8 @@ router.get("/reports", async (req, res) => {
     totalBookings += b;
     totalPlayers += p;
     totalRevenueGreenFees += revenueNum;
+    const noShowsDay = noShowRow?.c ?? 0;
+    noShowsTotal += noShowsDay;
     series.push({
       date: dateStr,
       bookings: b,
@@ -656,6 +690,7 @@ router.get("/reports", async (req, res) => {
       revenueGreenFees: revenueRounded,
       revenueAddons: 0,
       occupancyPct: round1(occupancyRaw),
+      noShows: noShowsDay,
     });
   }
 
@@ -667,6 +702,12 @@ router.get("/reports", async (req, res) => {
             dailyOccupancyRaw.length
         );
 
+  const confirmedTotal = confirmedForRateRow?.c ?? 0;
+  const noShowRate =
+    confirmedTotal > 0
+      ? round1((noShowsTotal / confirmedTotal) * 100)
+      : 0;
+
   res.json({
     days: numDays,
     series,
@@ -676,6 +717,8 @@ router.get("/reports", async (req, res) => {
       revenueGreenFees: round2(totalRevenueGreenFees),
       revenueAddons: 0,
       occupancyPct: totalsOccupancyPct,
+      noShows: noShowsTotal,
+      noShowRate,
       sources: {
         online: sourceAgg?.online ?? 0,
         staff: sourceAgg?.staff ?? 0,

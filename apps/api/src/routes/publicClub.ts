@@ -38,7 +38,7 @@ import {
   type AvailabilityCacheVariant,
 } from "../lib/availabilityCache";
 import { buildFilteredAvailability } from "../lib/availabilityMerge";
-import { enqueueEmail, getEmailQueue } from "../lib/queue";
+import { enqueueBookingJob, enqueueEmail, getEmailQueue } from "../lib/queue";
 import { getAuthPayload } from "../lib/auth";
 import {
   checkAndInsertAddons,
@@ -725,6 +725,20 @@ router.post(
         await enqueueEmail("email:booking-confirmation", { bookingId });
 
         if (booking.teeSlot) {
+          const noShowDelay =
+            new Date(booking.teeSlot.datetime).getTime() +
+            15 * 60 * 1000 -
+            Date.now();
+          if (noShowDelay > 0) {
+            await enqueueBookingJob(
+              "booking:auto-noshow",
+              { bookingId },
+              { delay: noShowDelay }
+            );
+          }
+        }
+
+        if (booking.teeSlot) {
           const teeTime = booking.teeSlot.datetime.getTime();
           const reminderAt = teeTime - 24 * 60 * 60 * 1000 - Date.now();
           if (reminderAt > 60 * 60 * 1000) {
@@ -929,6 +943,16 @@ router.post("/bookings/public", bookingRateLimit, async (req, res) => {
     await enqueueEmail("email:booking-confirmation", {
       bookingId: booking.id,
     });
+
+    const noShowDelay =
+      new Date(updatedSlot.datetime).getTime() + 15 * 60 * 1000 - Date.now();
+    if (noShowDelay > 0) {
+      await enqueueBookingJob(
+        "booking:auto-noshow",
+        { bookingId: booking.id },
+        { delay: noShowDelay }
+      );
+    }
 
     const teeTime = updatedSlot.datetime.getTime();
     const reminderAt = teeTime - 24 * 60 * 60 * 1000 - Date.now();

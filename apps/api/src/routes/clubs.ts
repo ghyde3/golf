@@ -1,5 +1,15 @@
 import { Router, type Request } from "express";
-import { db, clubs, clubConfig, bookings, teeSlots, courses } from "@teetimes/db";
+import {
+  db,
+  clubs,
+  clubConfig,
+  bookings,
+  teeSlots,
+  courses,
+  roundScorecards,
+  roundScorecardHoles,
+  courseHoles,
+} from "@teetimes/db";
 import {
   eq,
   desc,
@@ -358,6 +368,132 @@ router.get("/bookings", async (req, res) => {
     total,
     page,
     limit,
+  });
+});
+
+/** Non-PII aggregate scorecard stats for the club (all courses). */
+router.get("/reports/scorecards", async (req, res) => {
+  const clubId = paramClubId(req);
+  if (!clubId) {
+    res.status(400).json({ error: "clubId required" });
+    return;
+  }
+
+  const courseRows = await db.query.courses.findMany({
+    where: eq(courses.clubId, clubId),
+    columns: { id: true },
+  });
+  const courseIds = courseRows.map((c) => c.id);
+  if (courseIds.length === 0) {
+    res.json({
+      completionRate: 0,
+      totalRounds: 0,
+      holeAverages: [],
+      scoreDistribution: {
+        underPar: 0,
+        atPar: 0,
+        overPar1: 0,
+        overPar2plus: 0,
+      },
+    });
+    return;
+  }
+
+  const [totalBookingsRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(bookings.status, "confirmed"),
+        inArray(teeSlots.courseId, courseIds),
+        lt(teeSlots.datetime, new Date())
+      )
+    );
+
+  const [totalRoundsRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(roundScorecards)
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(inArray(teeSlots.courseId, courseIds));
+
+  const totalBookings = totalBookingsRow?.c ?? 0;
+  const totalRounds = totalRoundsRow?.c ?? 0;
+  const completionRate =
+    totalBookings === 0
+      ? 0
+      : Math.round((totalRounds / totalBookings) * 100) / 100;
+
+  const holeAvgRows = await db
+    .select({
+      holeNumber: roundScorecardHoles.holeNumber,
+      par: courseHoles.par,
+      avgScore: sql<number>`round(avg(${roundScorecardHoles.score})::numeric, 2)::float`,
+      sampleSize: sql<number>`count(*)::int`,
+    })
+    .from(roundScorecardHoles)
+    .innerJoin(
+      roundScorecards,
+      eq(roundScorecardHoles.scorecardId, roundScorecards.id)
+    )
+    .innerJoin(
+      courseHoles,
+      and(
+        eq(courseHoles.courseId, roundScorecards.courseId),
+        eq(courseHoles.holeNumber, roundScorecardHoles.holeNumber)
+      )
+    )
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(inArray(teeSlots.courseId, courseIds))
+    .groupBy(roundScorecardHoles.holeNumber, courseHoles.par)
+    .orderBy(roundScorecardHoles.holeNumber);
+
+  const distRows = await db
+    .select({
+      delta: sql<number>`(${roundScorecardHoles.score} - ${courseHoles.par})::int`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(roundScorecardHoles)
+    .innerJoin(
+      roundScorecards,
+      eq(roundScorecardHoles.scorecardId, roundScorecards.id)
+    )
+    .innerJoin(
+      courseHoles,
+      and(
+        eq(courseHoles.courseId, roundScorecards.courseId),
+        eq(courseHoles.holeNumber, roundScorecardHoles.holeNumber)
+      )
+    )
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(inArray(teeSlots.courseId, courseIds))
+    .groupBy(sql`(${roundScorecardHoles.score} - ${courseHoles.par})::int`);
+
+  let underPar = 0;
+  let atPar = 0;
+  let overPar1 = 0;
+  let overPar2plus = 0;
+  for (const row of distRows) {
+    if (row.delta < 0) underPar += row.count;
+    else if (row.delta === 0) atPar += row.count;
+    else if (row.delta === 1) overPar1 += row.count;
+    else overPar2plus += row.count;
+  }
+
+  res.json({
+    completionRate,
+    totalRounds,
+    holeAverages: holeAvgRows.map((r) => ({
+      holeNumber: r.holeNumber,
+      par: r.par,
+      avgScore: r.avgScore,
+      sampleSize: r.sampleSize,
+    })),
+    scoreDistribution: { underPar, atPar, overPar1, overPar2plus },
   });
 });
 

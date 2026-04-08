@@ -135,7 +135,6 @@ export async function handleWaitlistClaim(req: Request, res: Response): Promise<
 
   const authPayload = getAuthPayload(req);
   const publicUserId = authPayload?.userId ?? null;
-  const publicSource = authPayload ? "online_user" : "online_guest";
 
   try {
     const { booking, updatedSlot } = await db.transaction(async (tx) => {
@@ -165,7 +164,7 @@ export async function handleWaitlistClaim(req: Request, res: Response): Promise<
           bookingRef,
           teeSlotId: slot.id,
           userId: publicUserId,
-          source: publicSource,
+          source: "online_guest",
           guestName: entry.name,
           guestEmail: entry.email,
           playersCount,

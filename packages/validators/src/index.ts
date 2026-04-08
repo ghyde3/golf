@@ -12,3 +12,4 @@ export * from "./resources";
 export * from "./addons";
 export * from "./waitlist";
 export * from "./profile";
+export * from "./scorecards";

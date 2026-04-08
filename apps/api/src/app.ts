@@ -12,6 +12,7 @@ import publicClubRoutes from "./routes/publicClub";
 import { handleWaitlistClaim } from "./routes/waitlistClaim";
 import bookingOperations from "./routes/bookingOperations";
 import meRoutes from "./routes/me";
+import scorecardRoutes from "./routes/scorecards";
 import { authenticate, requireClubAccess } from "./middleware/auth";
 import { publicRateLimit } from "./middleware/rateLimit";
 
@@ -28,6 +29,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/platform", platformRoutes);
 app.use("/api/me", meRoutes);
+app.use("/api/me/scorecards", scorecardRoutes);
 // Public routes must run before `/api/clubs/:clubId` or paths like
 // `/api/clubs/public/:slug` are captured as clubId "public" and hit auth (401).
 app.get("/api/waitlist/claim", publicRateLimit, handleWaitlistClaim);

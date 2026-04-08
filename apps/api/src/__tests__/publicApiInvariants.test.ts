@@ -28,4 +28,14 @@ describe("Public API invariants", () => {
     expect(res.status).not.toBe(401);
     expect(res.status).toBe(400);
   });
+
+  it("GET /api/me/profile returns 401 without auth", async () => {
+    const res = await request(app).get("/api/me/profile");
+    expect(res.status).toBe(401);
+  });
+
+  it("PATCH /api/me/profile returns 401 without auth", async () => {
+    const res = await request(app).patch("/api/me/profile").send({ name: "Test" });
+    expect(res.status).toBe(401);
+  });
 });

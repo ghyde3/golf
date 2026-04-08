@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { apiBaseUrl, getSessionToken } from "@/lib/server-session";
+import type { ScorecardItem } from "../my-bookings/page";
 import AccountClient from "./AccountClient";
 
 export type ProfileData = {
@@ -25,5 +26,18 @@ export default async function AccountPage() {
   if (!res.ok) throw new Error("Could not load profile");
 
   const profile = (await res.json()) as ProfileData;
-  return <AccountClient profile={profile} accessToken={token} />;
+
+  const scRes = await fetch(`${apiBaseUrl()}/api/me/scorecards`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const scorecards = scRes.ok ? ((await scRes.json()) as ScorecardItem[]) : [];
+
+  return (
+    <AccountClient
+      profile={profile}
+      accessToken={token}
+      scorecards={scorecards}
+    />
+  );
 }

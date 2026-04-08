@@ -223,6 +223,9 @@ router.get("/bookings", authenticate, async (req, res) => {
         clubName: club.name,
         clubSlug: club.slug,
         timezone,
+        clubId: club.id,
+        courseId: course.id,
+        holes: course.holes,
       },
     };
   }

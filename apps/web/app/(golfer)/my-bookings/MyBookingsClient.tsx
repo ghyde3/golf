@@ -4,8 +4,9 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { useSession } from "next-auth/react";
+import { ScorecardEntryModal } from "@/components/golfer/ScorecardEntryModal";
 import { Button } from "@/components/ui/button";
-import type { MeBookingsResponse } from "./page";
+import type { MeBookingsResponse, ScorecardItem } from "./page";
 
 const DownloadCalendarButton = dynamic(
   () =>
@@ -94,6 +95,8 @@ function BookingCard({
   onCancelled,
   cancelError,
   onCancelError,
+  scorecard,
+  onScorecardSaved,
 }: {
   booking: MeBookingsResponse["upcoming"][0];
   section: "upcoming" | "past";
@@ -105,6 +108,8 @@ function BookingCard({
     message: string | null,
     options?: { outsideWindow?: boolean }
   ) => void;
+  scorecard?: ScorecardItem;
+  onScorecardSaved: () => void;
 }) {
   const tz = booking.teeSlot.timezone || "America/New_York";
   const { dateLabel, timeLabel } = formatSlot(booking.teeSlot.datetime, tz);
@@ -236,20 +241,56 @@ function BookingCard({
           </Button>
         </div>
       )}
+      {section === "past" && booking.teeSlot.courseId ? (
+        <div className="mt-4">
+          <ScorecardEntryModal
+            booking={{
+              id: booking.id,
+              bookingRef: booking.bookingRef,
+              teeSlot: {
+                datetime: booking.teeSlot.datetime,
+                courseName: booking.teeSlot.courseName,
+                clubName: booking.teeSlot.clubName,
+                clubId: booking.teeSlot.clubId,
+                courseId: booking.teeSlot.courseId,
+              },
+              holes: booking.teeSlot.holes,
+            }}
+            accessToken={authToken ?? ""}
+            existingScorecard={
+              scorecard ? { holes: scorecard.holes } : null
+            }
+            onSaved={onScorecardSaved}
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-ds-stone"
+              >
+                {scorecard ? "Edit score" : "Log score"}
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export default function MyBookingsClient({
   initialData,
+  initialScorecards,
   accessToken,
 }: {
   initialData: MeBookingsResponse;
+  initialScorecards: ScorecardItem[];
   accessToken: string;
 }) {
   const { data: session } = useSession();
   const authToken = session?.accessToken ?? accessToken;
   const [data, setData] = useState(initialData);
+  const [scorecards, setScorecards] = useState(initialScorecards);
   const [cancelErrors, setCancelErrors] = useState<
     Record<string, { message: string; outsideWindow?: boolean }>
   >({});
@@ -261,6 +302,15 @@ export default function MyBookingsClient({
     if (!res.ok) return;
     const next = (await res.json()) as MeBookingsResponse;
     setData(next);
+  }, [authToken]);
+
+  const refetchScorecards = useCallback(async () => {
+    const res = await fetch(`${API_URL}/api/me/scorecards`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    if (!res.ok) return;
+    const next = (await res.json()) as ScorecardItem[];
+    setScorecards(next);
   }, [authToken]);
 
   const setCancelErr = useCallback(
@@ -308,6 +358,7 @@ export default function MyBookingsClient({
                 cancelError={cancelErrors[b.id]}
                 onCancelError={setCancelErr}
                 onCancelled={() => void refetch()}
+                onScorecardSaved={() => void refetchScorecards()}
               />
             ))
           )}
@@ -322,16 +373,23 @@ export default function MyBookingsClient({
           {data.past.length === 0 ? (
             <p className="text-sm text-ds-muted">No past bookings.</p>
           ) : (
-            data.past.map((b) => (
-              <BookingCard
-                key={b.id}
-                booking={b}
-                section="past"
-                authToken={authToken}
-                onCancelError={setCancelErr}
-                onCancelled={() => void refetch()}
-              />
-            ))
+            data.past.map((b) => {
+              const sc = scorecards.find(
+                (s) => s.booking?.bookingRef === b.bookingRef
+              );
+              return (
+                <BookingCard
+                  key={b.id}
+                  booking={b}
+                  section="past"
+                  authToken={authToken}
+                  onCancelError={setCancelErr}
+                  onCancelled={() => void refetch()}
+                  scorecard={sc}
+                  onScorecardSaved={() => void refetchScorecards()}
+                />
+              );
+            })
           )}
         </div>
       </section>

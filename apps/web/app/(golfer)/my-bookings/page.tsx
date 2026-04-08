@@ -9,6 +9,9 @@ export type MeBookingTeeSlot = {
   clubName: string;
   clubSlug: string;
   timezone: string;
+  clubId: string;
+  courseId: string;
+  holes: number;
 };
 
 export type MeBookingItem = {
@@ -28,6 +31,24 @@ export type MeBookingsResponse = {
   upcoming: MeBookingItem[];
   past: MeBookingItem[];
   total: number;
+};
+
+export type ScorecardItem = {
+  id: string;
+  totalScore: number;
+  completedHoles: number;
+  createdAt: string | null;
+  holes: { holeNumber: number; score: number }[];
+  booking: {
+    bookingRef: string;
+    teeSlot: {
+      datetime: string;
+      courseName: string;
+      clubName: string;
+      clubId: string;
+      courseId: string;
+    } | null;
+  } | null;
 };
 
 export default async function MyBookingsPage() {
@@ -52,9 +73,16 @@ export default async function MyBookingsPage() {
 
   const data = (await res.json()) as MeBookingsResponse;
 
+  const scRes = await fetch(`${apiBaseUrl()}/api/me/scorecards`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const scorecards = scRes.ok ? ((await scRes.json()) as ScorecardItem[]) : [];
+
   return (
     <MyBookingsClient
       initialData={data}
+      initialScorecards={scorecards}
       accessToken={token}
     />
   );

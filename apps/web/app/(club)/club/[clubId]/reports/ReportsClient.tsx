@@ -453,7 +453,7 @@ export function ReportsClient({
                     <div className="max-h-[min(60vh,480px)] divide-y divide-stone overflow-y-auto">
                       {scorecardData.holeAverages.map((row) => (
                         <div
-                          key={row.holeNumber}
+                          key={`${row.holeNumber}-${row.par}`}
                           className="grid grid-cols-[48px_1fr_1fr_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[56px_1fr_1fr_1fr]"
                         >
                           <span className="text-sm font-medium text-ink">

@@ -417,7 +417,14 @@ router.get("/reports/scorecards", async (req, res) => {
     .from(roundScorecards)
     .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
     .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
-    .where(inArray(teeSlots.courseId, courseIds));
+    .where(
+      and(
+        inArray(teeSlots.courseId, courseIds),
+        isNull(bookings.deletedAt),
+        eq(bookings.status, "confirmed"),
+        lt(teeSlots.datetime, new Date())
+      )
+    );
 
   const totalBookings = totalBookingsRow?.c ?? 0;
   const totalRounds = totalRoundsRow?.c ?? 0;

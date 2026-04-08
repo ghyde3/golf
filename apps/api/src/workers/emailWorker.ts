@@ -204,8 +204,24 @@ async function sendReminderEmail(bookingId: string): Promise<void> {
     "EEE MMM d, h:mm a"
   );
   const ref = booking.bookingRef;
-  const to = booking.guestEmail ?? "";
-  if (!to) return;
+
+  let to: string;
+
+  if (booking.userId) {
+    // User booking — fetch email from users table; check opt-out
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, booking.userId),
+      columns: { email: true, notificationPrefs: true },
+    });
+    if (!user) return;
+    const prefs = user.notificationPrefs as { reminders?: boolean } | null;
+    if (prefs?.reminders === false) return; // opted out
+    to = user.email;
+  } else {
+    // Guest booking — use guestEmail; no opt-out check
+    to = booking.guestEmail ?? "";
+    if (!to) return;
+  }
 
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
   const manageUrl = `${baseUrl}/book/${club.slug}`;

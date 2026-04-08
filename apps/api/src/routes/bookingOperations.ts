@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, isNull, desc, sql, gte } from "drizzle-orm";
+import { eq, and, isNull, desc, sql, gte, asc } from "drizzle-orm";
 import {
   db,
   bookings,
@@ -7,6 +7,7 @@ import {
   teeSlots,
   courses,
   clubConfig,
+  waitlistEntries,
 } from "@teetimes/db";
 import { CreateBookingSchema } from "@teetimes/validators";
 import { authenticate } from "../middleware/auth";
@@ -93,6 +94,7 @@ router.get("/:bookingId", authenticate, async (req, res) => {
   res.json({
     id: booking.id,
     bookingRef: booking.bookingRef,
+    source: booking.source,
     guestName: booking.guestName,
     guestEmail: booking.guestEmail,
     playersCount: booking.playersCount,
@@ -375,6 +377,11 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
 
   let guestOk = false;
   let staffOk = false;
+  let ownerOk = false;
+
+  if (auth && booking.userId && auth.userId === booking.userId) {
+    ownerOk = true;
+  }
 
   if (token) {
     try {
@@ -394,7 +401,7 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     staffOk = canAccessClub(auth.roles, club.id);
   }
 
-  if (!guestOk && !staffOk) {
+  if (!guestOk && !staffOk && !ownerOk) {
     if (!token && !auth) {
       sendUnauthorized(res);
       return;
@@ -403,7 +410,7 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     return;
   }
 
-  if (guestOk && !staffOk) {
+  if ((guestOk || ownerOk) && !staffOk) {
     const configs = await db.query.clubConfig.findMany({
       where: eq(clubConfig.clubId, club.id),
       orderBy: [desc(clubConfig.effectiveFrom)],
@@ -455,6 +462,23 @@ router.delete("/:bookingId", publicRateLimit, async (req, res) => {
     });
 
     await invalidateAvailabilityCache(club.id, slot.courseId, dateStr);
+
+    const firstWaiting = await db.query.waitlistEntries.findFirst({
+      where: and(
+        eq(waitlistEntries.teeSlotId, slot.id),
+        isNull(waitlistEntries.notifiedAt)
+      ),
+      orderBy: [asc(waitlistEntries.createdAt)],
+    });
+
+    if (firstWaiting) {
+      await enqueueEmail("email:waitlist-notify", {
+        waitlistEntryId: firstWaiting.id,
+        clubName: club.name,
+        clubSlug: club.slug,
+        whenLabel: slot.datetime.toISOString(),
+      });
+    }
 
     if (booking.guestEmail) {
       await enqueueEmail("email:booking-cancellation", {
@@ -530,6 +554,8 @@ router.post("/", authenticate, async (req, res) => {
         .values({
           bookingRef: ref,
           teeSlotId,
+          userId: auth.userId,
+          source: "staff",
           guestName,
           guestEmail,
           playersCount,

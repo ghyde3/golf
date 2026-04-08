@@ -28,6 +28,10 @@ export const teeSlots = pgTable(
   },
   (table) => [
     check("no_overbooking", sql`${table.bookedPlayers} <= ${table.maxPlayers}`),
+    check(
+      "tee_slots_slot_type_valid",
+      sql`${table.slotType} IN ('9hole', '18hole', '27hole', '36hole')`
+    ),
   ]
 );
 
@@ -42,6 +46,7 @@ export const bookings = pgTable("bookings", {
   notes: text("notes"),
   status: text("status").default("confirmed"),
   paymentStatus: text("payment_status").default("unpaid"),
+  source: text("source").notNull().default("online_guest"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });

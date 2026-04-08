@@ -7,3 +7,5 @@ export * from "./platform-settings";
 export * from "./invoices";
 export * from "./audit-log";
 export * from "./announcements";
+export * from "./resources";
+export * from "./waitlist";

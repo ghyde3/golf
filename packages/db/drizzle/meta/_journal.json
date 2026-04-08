@@ -29,6 +29,27 @@
       "when": 1775527297333,
       "tag": "0003_broad_hawkeye",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775591903126,
+      "tag": "0004_living_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775605929406,
+      "tag": "0005_clear_steve_rogers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1775606670414,
+      "tag": "0006_bizarre_titania",
+      "breakpoints": true
     }
   ]
 }

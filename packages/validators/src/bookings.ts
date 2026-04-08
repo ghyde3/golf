@@ -43,3 +43,9 @@ export const PublicBookingBodySchema = z
   });
 
 export type CreateBooking = z.infer<typeof CreateBookingSchema>;
+
+export const MeBookingsQuerySchema = z.object({
+  upcoming: z.union([z.literal("true"), z.literal("false")]).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});

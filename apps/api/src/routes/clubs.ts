@@ -12,10 +12,13 @@ import {
   inArray,
   or,
   ilike,
+  gt,
   type SQL,
 } from "drizzle-orm";
 import { authenticate, requireClubAccess } from "../middleware/auth";
 import { escapeLikePattern } from "../lib/escapeLike";
+import { resolveConfig, resolveHours } from "../lib/configResolver";
+import { generateSlots } from "../lib/slotGenerator";
 
 const router = Router({ mergeParams: true });
 
@@ -114,6 +117,57 @@ function utcDayEndExclusive(isoDate: string): Date {
   const end = new Date(start);
   end.setUTCDate(end.getUTCDate() + 1);
   return end;
+}
+
+function effFrom(v: unknown): string {
+  if (typeof v === "string") return v.slice(0, 10);
+  if (v instanceof Date) return v.toISOString().split("T")[0];
+  return String(v).slice(0, 10);
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+type ClubConfigRowForSlots = {
+  effectiveFrom: string | Date;
+  slotIntervalMinutes: number | null;
+  openTime: string | null;
+  closeTime: string | null;
+  schedule: unknown;
+  timezone: string | null;
+};
+
+function totalSlotsForDay(
+  configRows: ClubConfigRowForSlots[],
+  courseCount: number,
+  dateStr: string
+): number {
+  if (configRows.length === 0 || courseCount === 0) return 0;
+  const mapped = configRows.map((c) => ({
+    effectiveFrom: effFrom(c.effectiveFrom),
+    slotIntervalMinutes: c.slotIntervalMinutes,
+    openTime: c.openTime,
+    closeTime: c.closeTime,
+    schedule: c.schedule,
+    timezone: c.timezone,
+  }));
+  const targetDate = new Date(`${dateStr}T12:00:00Z`);
+  const config = resolveConfig(mapped, targetDate);
+  const dayOfWeek = targetDate.getUTCDay();
+  const hours = resolveHours(config, dayOfWeek);
+  const slotCfg = {
+    openTime: hours.openTime,
+    closeTime: hours.closeTime,
+    slotIntervalMinutes: config.slotIntervalMinutes ?? 10,
+    timezone: config.timezone ?? "America/New_York",
+  };
+  const n = generateSlots(slotCfg, dateStr).length;
+  return n * courseCount;
 }
 
 /** Same club scope as `bookingsToday` in GET /summary. Default date range: UTC calendar day on `createdAt` (today if `from`/`to` omitted). */
@@ -328,7 +382,7 @@ router.get("/reports", async (req, res) => {
   let numDays = 7;
   if (typeof rawDays === "string") {
     const n = Number.parseInt(rawDays, 10);
-    if (!Number.isNaN(n)) numDays = Math.min(31, Math.max(1, n));
+    if (!Number.isNaN(n)) numDays = Math.min(90, Math.max(1, n));
   }
 
   const now = new Date();
@@ -340,16 +394,56 @@ router.get("/reports", async (req, res) => {
     date: string;
     bookings: number;
     players: number;
+    revenueGreenFees: number;
+    revenueAddons: number;
+    occupancyPct: number;
   }[] = [];
 
   let totalBookings = 0;
   let totalPlayers = 0;
+  let totalRevenueGreenFees = 0;
+  const dailyOccupancyRaw: number[] = [];
+
+  const configRows = await db.query.clubConfig.findMany({
+    where: eq(clubConfig.clubId, clubId),
+    orderBy: [desc(clubConfig.effectiveFrom)],
+  });
+
+  const courseRows = await db.query.courses.findMany({
+    where: eq(courses.clubId, clubId),
+    columns: { id: true },
+  });
+  const courseCount = courseRows.length;
+
+  const rangeStart = new Date(todayUtc);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - (numDays - 1));
+  const rangeEnd = new Date(todayUtc);
+  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+
+  const [sourceAgg] = await db
+    .select({
+      online: sql<number>`coalesce(count(*) filter (where ${bookings.source} in ('online_guest', 'online_user')), 0)::int`,
+      staff: sql<number>`coalesce(count(*) filter (where ${bookings.source} = 'staff'), 0)::int`,
+    })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(courses.clubId, clubId),
+        gte(bookings.createdAt, rangeStart),
+        lt(bookings.createdAt, rangeEnd)
+      )
+    );
 
   for (let offset = numDays - 1; offset >= 0; offset--) {
     const dayStart = new Date(todayUtc);
     dayStart.setUTCDate(dayStart.getUTCDate() - offset);
     const dayEnd = new Date(dayStart);
     dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
+
+    const dateStr = dayStart.toISOString().slice(0, 10);
 
     const [row] = await db
       .select({
@@ -368,21 +462,82 @@ router.get("/reports", async (req, res) => {
         )
       );
 
+    const [revRow] = await db
+      .select({
+        revenue: sql<string>`coalesce(sum(coalesce(${teeSlots.price}, 0) * ${bookings.playersCount}), 0)::text`,
+      })
+      .from(bookings)
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          isNull(bookings.deletedAt),
+          eq(courses.clubId, clubId),
+          gte(bookings.createdAt, dayStart),
+          lt(bookings.createdAt, dayEnd)
+        )
+      );
+
+    const [occRow] = await db
+      .select({
+        occupied: sql<number>`count(*)::int`,
+      })
+      .from(teeSlots)
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          eq(courses.clubId, clubId),
+          gte(teeSlots.datetime, dayStart),
+          lt(teeSlots.datetime, dayEnd),
+          gt(teeSlots.bookedPlayers, 0)
+        )
+      );
+
+    const totalSlots = totalSlotsForDay(configRows, courseCount, dateStr);
+    const occupiedSlots = occRow?.occupied ?? 0;
+    const occupancyRaw =
+      totalSlots === 0 ? 0 : (occupiedSlots / totalSlots) * 100;
+    dailyOccupancyRaw.push(occupancyRaw);
+
     const b = row?.bookings ?? 0;
     const p = row?.players ?? 0;
+    const revenueNum = Number(revRow?.revenue ?? 0);
+    const revenueRounded = round2(revenueNum);
     totalBookings += b;
     totalPlayers += p;
+    totalRevenueGreenFees += revenueNum;
     series.push({
-      date: dayStart.toISOString().slice(0, 10),
+      date: dateStr,
       bookings: b,
       players: p,
+      revenueGreenFees: revenueRounded,
+      revenueAddons: 0,
+      occupancyPct: round1(occupancyRaw),
     });
   }
+
+  const totalsOccupancyPct =
+    dailyOccupancyRaw.length === 0
+      ? 0
+      : round1(
+          dailyOccupancyRaw.reduce((a, x) => a + x, 0) /
+            dailyOccupancyRaw.length
+        );
 
   res.json({
     days: numDays,
     series,
-    totals: { bookings: totalBookings, players: totalPlayers },
+    totals: {
+      bookings: totalBookings,
+      players: totalPlayers,
+      revenueGreenFees: round2(totalRevenueGreenFees),
+      revenueAddons: 0,
+      occupancyPct: totalsOccupancyPct,
+      sources: {
+        online: sourceAgg?.online ?? 0,
+        staff: sourceAgg?.staff ?? 0,
+      },
+    },
   });
 });
 

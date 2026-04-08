@@ -48,8 +48,14 @@ export default async function ClubDashboardPage({
   const dateStr =
     searchParams.date ?? new Date().toISOString().split("T")[0];
 
-  const res = await clubManageApi(params.clubId, "/summary");
+  const [res, reportsRes] = await Promise.all([
+    clubManageApi(params.clubId, "/summary"),
+    clubManageApi(params.clubId, "/reports?days=7"),
+  ]);
   const summary = res.ok ? ((await res.json()) as Summary) : null;
+  const reports = reportsRes.ok ? await reportsRes.json() : null;
+  const sparklineSeries: { date: string; bookings: number }[] =
+    reports?.series ?? [];
 
   if (!summary) {
     return (
@@ -112,6 +118,7 @@ export default async function ClubDashboardPage({
     <DashboardClient
       clubId={params.clubId}
       dateStr={dateStr}
+      sparklineSeries={sparklineSeries}
       summary={{
         bookingsToday: summary.bookingsToday,
         slug: summary.slug,

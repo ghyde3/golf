@@ -192,6 +192,11 @@ export function BookingDrawer({
                 <p className="mt-3 font-mono text-sm text-gold-light">
                   {detail.bookingRef}
                 </p>
+                <p className="mt-2">
+                  <span className="inline-flex rounded-full bg-black/25 px-2.5 py-0.5 text-[11px] font-medium text-white/75">
+                    {detail.source === "staff" ? "Staff entry" : "Online"}
+                  </span>
+                </p>
               </div>
 
               <div className="mt-6 space-y-3">

@@ -7,3 +7,5 @@ export * from "./platform-settings";
 export * from "./announcements";
 export * from "./platform-users";
 export * from "./platform-billing";
+export * from "./resources";
+export * from "./waitlist";

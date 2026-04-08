@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: devpass
       POSTGRES_DB: teetimes
     ports:
-      - "5432:5432"
+      # Use 5433 on the host when another Postgres already binds localhost:5432 (common on dev machines).
+      - "5433:5432"
     volumes:
       - teetimes_pgdata:/var/lib/postgresql/data
     healthcheck:

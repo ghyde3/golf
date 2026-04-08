@@ -16,6 +16,7 @@ export type TeeSlotRow = {
 export type BookingDetail = {
   id: string;
   bookingRef: string;
+  source: "online_guest" | "online_user" | "staff";
   guestName: string | null;
   guestEmail: string | null;
   playersCount: number;

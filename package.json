@@ -10,6 +10,7 @@
     "test": "turbo test",
     "typecheck": "turbo typecheck",
     "seed": "tsx packages/db/src/seed.ts",
+    "seed:inventory": "tsx packages/db/src/seedInventory.ts",
     "seed:bookings": "tsx packages/db/src/seedBookings.ts",
     "seed:reset": "tsx packages/db/src/seedReset.ts && pnpm seed && pnpm seed:bookings",
     "db:generate": "drizzle-kit generate --config packages/db/drizzle.config.ts",

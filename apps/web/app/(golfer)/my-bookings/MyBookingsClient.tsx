@@ -1,10 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useCallback, useState } from "react";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import type { MeBookingsResponse } from "./page";
+
+const DownloadCalendarButton = dynamic(
+  () =>
+    import("@/components/booking/DownloadCalendarButton").then(
+      (m) => m.DownloadCalendarButton
+    ),
+  { ssr: false }
+);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -197,6 +206,16 @@ function BookingCard({
         ) : (
           <span className="text-[12px] text-ds-muted">No charge</span>
         )}
+      </div>
+      <div className="mt-3">
+        <DownloadCalendarButton
+          bookingRef={booking.bookingRef}
+          clubName={booking.teeSlot.clubName}
+          courseName={booking.teeSlot.courseName}
+          datetimeIso={booking.teeSlot.datetime}
+          timezone={booking.teeSlot.timezone || "America/New_York"}
+          playersCount={booking.playersCount}
+        />
       </div>
       {showCancelRow && (
         <div className="mt-4">

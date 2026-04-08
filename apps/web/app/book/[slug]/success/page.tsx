@@ -1,9 +1,18 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+
+const DownloadCalendarButton = dynamic(
+  () =>
+    import("@/components/booking/DownloadCalendarButton").then(
+      (m) => m.DownloadCalendarButton
+    ),
+  { ssr: false }
+);
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -130,6 +139,19 @@ function SuccessContent({ params }: { params: { slug: string } }) {
       >
         <span className="relative z-[1]">Book another tee time</span>
       </Link>
+
+      {datetime && (
+        <div className="mt-4 flex justify-center">
+          <DownloadCalendarButton
+            bookingRef={bookingRef}
+            clubName={club?.name ?? params.slug}
+            courseName=""
+            datetimeIso={datetime}
+            timezone={timezone}
+            playersCount={Number(players)}
+          />
+        </div>
+      )}
 
       {sessionStatus === "authenticated" && session && (
         <Link

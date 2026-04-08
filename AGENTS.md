@@ -3,7 +3,7 @@
 ## Cursor Cloud specific instructions
 
 ### Architecture
-This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("TeeTimes"). See `plan.md` for the full specification.
+This is a **pnpm + Turborepo monorepo** for a golf tee time booking platform ("TeeTimes"). See `FEATURES.md` for a full inventory of implemented features.
 
 - `apps/api` — Express.js backend (port 3001)
 - `apps/web` — Next.js 14 App Router frontend (port 3000)

@@ -2,7 +2,7 @@
 
 Monorepo for a tee-time booking product: **Next.js** app (`apps/web`), **Express** API (`apps/api`), shared **Drizzle** schema and seeds (`packages/db`), **Zod** validators (`packages/validators`), and shared types (`packages/types`). Postgres holds clubs, courses, tee slots, bookings, and users; **Redis** backs BullMQ email jobs and short-lived availability cache.
 
-This README summarizes **current state** for local development. Detailed build/test checklists live in `plan.md` (many items there are manual QA, not all are automated yet).
+This README covers **local development setup**. For a comprehensive inventory of every implemented feature, see **[FEATURES.md](FEATURES.md)**.
 
 ## Prerequisites
 
@@ -89,9 +89,6 @@ All seeded accounts share the **same app password** (bcrypt hash is in `packages
 - **NextAuth (v5 beta)** on the web: credentials provider posts to the API login route; session carries a JWT **`accessToken`** used as Bearer token for platform/club server routes and BFF-style `app/api/platform/*` handlers.
 - **Express** validates JWTs via shared secret (`JWT_SECRET` / `NEXTAUTH_SECRET`).
 
-## Current state (honest snapshot)
+## Feature inventory
 
-- **Implemented:** Dockerized Postgres/Redis, migrations, seeds, booking density seed, availability API with optional full grid + Redis cache invalidation, public booking flow, club/platform routes with RBAC, rate limits on public endpoints, email queue + React Email templates, set-password flow, Vitest coverage for health, some validators, and pure lib helpers (`configResolver`, `slotGenerator`).
-- **Not exhaustive:** `plan.md` still lists broader integration tests (cache TTL proofs, concurrency, full route matrices, worker failure modes, etc.). Treat those as a roadmap / QA list unless you expand automated tests.
-
-For deep task-by-task status, keep using **`plan.md`**.
+See **[FEATURES.md](FEATURES.md)** for a full, categorized list of everything that's built and working: public booking flow, club staff dashboard, platform admin, API services, email system, database schema, shared packages, UI design system, and infrastructure.

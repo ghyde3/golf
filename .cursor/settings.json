@@ -1,7 +1,1 @@
-{
-  "plugins": {
-    "superpowers-dev/superpowers": {
-      "enabled": true
-    }
-  }
-}
+{}

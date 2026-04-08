@@ -13,16 +13,13 @@ import {
   seedClubTagDefinitions,
 } from "./seedTags";
 import { seedInventoryForClub } from "./seedInventory";
+import {
+  PINEBROOK_COURSE_NAMES,
+  seedPinebrookCourseHoles,
+} from "./seedPinebrookCourseHoles";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client, { schema });
-
-const PINEBROOK_COURSE_NAMES = [
-  "The Championship",
-  "The Meadows",
-  "The Pines",
-  "The Lakes",
-] as const;
 
 /** Merge tee_slots onto the kept course row and delete duplicate course rows (same club + name). */
 async function dedupeCoursesByName(clubId: string, names: readonly string[]) {
@@ -107,6 +104,8 @@ async function seed() {
       await db.insert(courses).values(c);
     }
   }
+
+  await seedPinebrookCourseHoles(db, clubId);
 
   // Create users — dev-only password for all seeded accounts: `devpass`
   const passwordHash =

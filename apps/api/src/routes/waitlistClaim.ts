@@ -73,20 +73,6 @@ export async function handleWaitlistClaim(req: Request, res: Response): Promise<
     return;
   }
 
-  const createdAt = entry.createdAt!;
-  if (Date.now() - createdAt.getTime() > TWENTY_FOUR_H_MS) {
-    res
-      .status(410)
-      .type("html")
-      .send(
-        waitlistErrorHtml(
-          "This link has expired",
-          "Waitlist claim links are valid for 24 hours. Please join the waitlist again if you still need a tee time."
-        )
-      );
-    return;
-  }
-
   if (entry.claimedAt != null) {
     res
       .status(409)
@@ -108,6 +94,19 @@ export async function handleWaitlistClaim(req: Request, res: Response): Promise<
         waitlistErrorHtml(
           "Not available yet",
           "This link is not active yet. You will receive email when a spot opens for you."
+        )
+      );
+    return;
+  }
+
+  if (Date.now() - entry.notifiedAt.getTime() > TWENTY_FOUR_H_MS) {
+    res
+      .status(410)
+      .type("html")
+      .send(
+        waitlistErrorHtml(
+          "This link has expired",
+          "Waitlist claim links are valid for 24 hours. Please join the waitlist again if you still need a tee time."
         )
       );
     return;

@@ -101,9 +101,18 @@ export function TeesheetPageClient({
   /** First teesheet fetch shows the full-page loader; later refreshes (date change, etc.) stay silent. */
   const teesheetInitialLoadRef = useRef(true);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const courseHeaderStickyRef = useRef<HTMLDivElement>(null);
+  const didScrollToNowRef = useRef(false);
+
   useEffect(() => {
     teesheetInitialLoadRef.current = true;
   }, [clubId]);
+
+  useEffect(() => {
+    didScrollToNowRef.current = false;
+  }, [clubId, dateStr]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -219,6 +228,60 @@ export function TeesheetPageClient({
   const firstUpcomingVisibleIdx = visibleTimeKeys.findIndex(
     (ts) => new Date(ts).getTime() > nowMs
   );
+
+  /** Scroll after paint: refs/DndContext can be null in useLayoutEffect; deps won't re-run if we bail early. */
+  useEffect(() => {
+    if (loading) return;
+    if (dateStr !== todayIsoLocal()) return;
+    if (firstUpcomingVisibleIdx < 0) return;
+    if (didScrollToNowRef.current) return;
+
+    let cancelled = false;
+    let attempts = 0;
+    const maxAttempts = 40;
+
+    const runScroll = () => {
+      if (cancelled || didScrollToNowRef.current) return;
+
+      const container = scrollContainerRef.current;
+      const anchor = scrollAnchorRef.current;
+      if (!container || !anchor) {
+        attempts += 1;
+        if (attempts < maxAttempts) {
+          requestAnimationFrame(runScroll);
+        }
+        return;
+      }
+
+      const stickyH =
+        courseHeaderStickyRef.current?.getBoundingClientRect().height ?? 0;
+      const pad = 8;
+      const containerRect = container.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
+      const delta = anchorRect.top - containerRect.top - stickyH - pad;
+      container.scrollTop += delta;
+      didScrollToNowRef.current = true;
+    };
+
+    const frameIds = { outer: 0, inner: 0 };
+    frameIds.outer = requestAnimationFrame(() => {
+      frameIds.inner = requestAnimationFrame(() => {
+        if (!cancelled) runScroll();
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameIds.outer);
+      cancelAnimationFrame(frameIds.inner);
+    };
+  }, [
+    loading,
+    dateStr,
+    firstUpcomingVisibleIdx,
+    visibleTimeKeys.length,
+    coursesWithSlots.length,
+  ]);
 
   const onDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -342,7 +405,10 @@ export function TeesheetPageClient({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-auto bg-warm-white">
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 flex-1 overflow-auto bg-warm-white"
+        >
           {loading ? (
             <p className="p-6 text-muted">Loading…</p>
           ) : coursesWithSlots.length === 0 ? (
@@ -357,11 +423,12 @@ export function TeesheetPageClient({
                   }}
                 >
                   <div className="sticky left-0 z-30 border-b border-stone bg-cream/80 px-1 py-2 text-[10px] font-bold uppercase tracking-widest text-muted backdrop-blur-sm" />
-                  {coursesWithSlots.map((c) => {
+                  {coursesWithSlots.map((c, i) => {
                     const pct = pctBooked(c.slots);
                     return (
                       <div
                         key={c.id}
+                        ref={i === 0 ? courseHeaderStickyRef : undefined}
                         className="sticky top-0 z-20 border-b border-stone bg-cream/80 px-2 py-2 text-center backdrop-blur-sm"
                       >
                         <div className="text-xs font-bold text-ink">
@@ -381,6 +448,7 @@ export function TeesheetPageClient({
                         {firstUpcomingVisibleIdx === rowIdx ? (
                           <div className="contents">
                             <div
+                              ref={scrollAnchorRef}
                               className="col-span-full flex items-center gap-2 border-b border-green-200 bg-green-50 px-4 py-1.5"
                               style={{ gridColumn: "1 / -1" }}
                             >

@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { CourseHolesEditor } from "@/components/club/CourseHolesEditor";
+import { useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  CourseHolesEditor,
+  type CourseHolesEditorHandle,
+} from "@/components/club/CourseHolesEditor";
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
 
 export type CourseRow = { id: string; name: string; holes: number };
@@ -33,6 +37,7 @@ export function CoursesClient({
   const [editState, setEditState] = useState<EditState>(null);
   const [editError, setEditError] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const holesEditorRef = useRef<CourseHolesEditorHandle>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +71,7 @@ export function CoursesClient({
     setEditError("");
   }
 
-  async function handleEdit(e: React.FormEvent) {
+  async function handleCombinedSave(e: React.FormEvent) {
     e.preventDefault();
     if (!editState) return;
     setEditError("");
@@ -88,6 +93,16 @@ export function CoursesClient({
           .map((c) => (c.id === updated.id ? updated : c))
           .sort((a, b) => a.name.localeCompare(b.name))
       );
+      const saveHoles = holesEditorRef.current?.saveHoles;
+      if (!saveHoles) {
+        setEditError("Could not save holes. Try again.");
+        return;
+      }
+      const holesOk = await saveHoles();
+      if (!holesOk) {
+        return;
+      }
+      toast.success("Course and holes saved");
       setEditState(null);
     } finally {
       setEditSaving(false);
@@ -180,47 +195,62 @@ export function CoursesClient({
           </div>
         )}
 
-        {/* Edit course modal */}
+        {/* Edit course + holes */}
         {editState && (
           <div className="rounded-xl border border-stone bg-white p-4 shadow-sm">
             <h3 className="mb-3 font-display text-base text-ink">Edit course</h3>
-            <form onSubmit={handleEdit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-              <div className="flex-1">
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted">
-                  Course name
-                </label>
-                <input
-                  type="text"
-                  value={editState.name}
-                  onChange={(e) =>
-                    setEditState((s) => s && { ...s, name: e.target.value })
-                  }
-                  required
-                  className="w-full rounded-lg border border-stone px-3 py-2 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted">
-                  Holes
-                </label>
-                <div className="flex gap-2">
-                  {([9, 18] as const).map((h) => (
-                    <button
-                      key={h}
-                      type="button"
-                      onClick={() => setEditState((s) => s && { ...s, holes: h })}
-                      className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
-                        editState.holes === h
-                          ? "border-fairway bg-fairway text-white"
-                          : "border-stone bg-white text-ink hover:border-fairway/50"
-                      }`}
-                    >
-                      {h}
-                    </button>
-                  ))}
+            <form onSubmit={handleCombinedSave}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <div className="flex-1">
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted">
+                    Course name
+                  </label>
+                  <input
+                    type="text"
+                    value={editState.name}
+                    onChange={(e) =>
+                      setEditState((s) => s && { ...s, name: e.target.value })
+                    }
+                    required
+                    className="w-full rounded-lg border border-stone px-3 py-2 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted">
+                    Holes
+                  </label>
+                  <div className="flex gap-2">
+                    {([9, 18] as const).map((h) => (
+                      <button
+                        key={h}
+                        type="button"
+                        onClick={() => setEditState((s) => s && { ...s, holes: h })}
+                        className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
+                          editState.holes === h
+                            ? "border-fairway bg-fairway text-white"
+                            : "border-stone bg-white text-ink hover:border-fairway/50"
+                        }`}
+                      >
+                        {h}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <CourseHolesEditor
+                ref={holesEditorRef}
+                clubId={clubId}
+                course={
+                  courses.find((c) => c.id === editState.id) ?? {
+                    id: editState.id,
+                    name: editState.name,
+                    holes: editState.holes,
+                  }
+                }
+                mode="combined"
+                combinedHoleCount={editState.holes}
+              />
+              <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="submit"
                   disabled={editSaving || !editState.name.trim()}
@@ -278,7 +308,13 @@ export function CoursesClient({
                       </div>
                     </div>
                     <div className="px-4 pb-3">
-                      <CourseHolesEditor clubId={clubId} course={c} />
+                      {editState?.id !== c.id && (
+                        <CourseHolesEditor
+                          clubId={clubId}
+                          course={c}
+                          mode="summary"
+                        />
+                      )}
                     </div>
                   </div>
                 ))}

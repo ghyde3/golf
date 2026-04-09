@@ -19,13 +19,20 @@ export default async function ClubSettingsPage({
   }
   const configs = (await configRes.json()) as ConfigRow[];
   const profile = profileRes.ok
-    ? ((await profileRes.json()) as { heroImageUrl: string | null })
-    : { heroImageUrl: null as string | null };
+    ? ((await profileRes.json()) as {
+        heroImageUrl: string | null;
+        bookingFee: string | null;
+      })
+    : {
+        heroImageUrl: null as string | null,
+        bookingFee: null as string | null,
+      };
   return (
     <SettingsClient
       clubId={params.clubId}
       configs={configs}
       initialHeroImageUrl={profile.heroImageUrl}
+      initialBookingFee={profile.bookingFee}
     />
   );
 }

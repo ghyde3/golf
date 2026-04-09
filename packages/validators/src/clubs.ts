@@ -37,9 +37,15 @@ export const ClubConfigSchema = z.object({
 
 export type CreateClub = z.infer<typeof CreateClubSchema>;
 
-/** Club admin: listing image shown on public search (URL or path under the web app). */
+/** Club admin: listing image and default per-player green fee (used when a tee slot has no price). */
 export const ClubProfilePatchSchema = z.object({
-  heroImageUrl: z.string().max(2048).nullable(),
+  heroImageUrl: z.string().max(2048).nullable().optional(),
+  bookingFee: z
+    .union([
+      z.string().regex(/^\d+(\.\d{1,2})?$/),
+      z.number().finite().min(0).max(99999),
+    ])
+    .optional(),
 });
 export type ScheduleDay = z.infer<typeof ScheduleDaySchema>;
 export type ClubConfig = z.infer<typeof ClubConfigSchema>;

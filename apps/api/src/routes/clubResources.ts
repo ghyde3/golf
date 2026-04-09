@@ -47,6 +47,7 @@ router.get("/profile", async (req, res) => {
       name: true,
       slug: true,
       heroImageUrl: true,
+      bookingFee: true,
     },
   });
   if (!club) {
@@ -58,6 +59,8 @@ router.get("/profile", async (req, res) => {
     name: club.name,
     slug: club.slug,
     heroImageUrl: club.heroImageUrl,
+    bookingFee:
+      club.bookingFee != null ? String(club.bookingFee) : null,
   });
 });
 
@@ -74,13 +77,30 @@ router.patch(
       return;
     }
 
+    const set: {
+      heroImageUrl?: string | null;
+      bookingFee?: string;
+    } = {};
+    if (parsed.data.heroImageUrl !== undefined) {
+      set.heroImageUrl = parsed.data.heroImageUrl;
+    }
+    if (parsed.data.bookingFee !== undefined) {
+      const v = parsed.data.bookingFee;
+      set.bookingFee = typeof v === "number" ? v.toFixed(2) : v;
+    }
+    if (Object.keys(set).length === 0) {
+      res.status(400).json({ error: "No fields to update" });
+      return;
+    }
+
     const [updated] = await db
       .update(clubs)
-      .set({ heroImageUrl: parsed.data.heroImageUrl })
+      .set(set)
       .where(eq(clubs.id, clubId))
       .returning({
         id: clubs.id,
         heroImageUrl: clubs.heroImageUrl,
+        bookingFee: clubs.bookingFee,
       });
 
     if (!updated) {
@@ -88,7 +108,12 @@ router.patch(
       return;
     }
 
-    res.json(updated);
+    res.json({
+      id: updated.id,
+      heroImageUrl: updated.heroImageUrl,
+      bookingFee:
+        updated.bookingFee != null ? String(updated.bookingFee) : null,
+    });
   }
 );
 

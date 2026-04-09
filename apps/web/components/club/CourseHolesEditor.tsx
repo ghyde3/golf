@@ -1,13 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useSession } from "next-auth/react";
-import { toast } from "sonner";
 
 export interface CourseHolesEditorProps {
   clubId: string;
   course: { id: string; name: string; holes: number };
+  /** Read-only line under a course row (no hole edit buttons). */
+  mode: "summary" | "combined";
+  /** When mode is combined, draft row count follows this (may differ from course until save). */
+  combinedHoleCount?: number;
 }
+
+export type CourseHolesEditorHandle = {
+  saveHoles: () => Promise<boolean>;
+};
 
 type ApiHole = {
   id: string;
@@ -80,7 +95,13 @@ function draftToPayload(rows: DraftRow[]) {
   });
 }
 
-export function CourseHolesEditor({ clubId, course }: CourseHolesEditorProps) {
+export const CourseHolesEditor = forwardRef<
+  CourseHolesEditorHandle,
+  CourseHolesEditorProps
+>(function CourseHolesEditor(
+  { clubId, course, mode, combinedHoleCount },
+  ref
+) {
   const { data: session, status: sessionStatus } = useSession();
   const token = session?.accessToken;
 
@@ -88,12 +109,14 @@ export function CourseHolesEditor({ clubId, course }: CourseHolesEditorProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const [editorOpen, setEditorOpen] = useState(false);
   const [draft, setDraft] = useState<DraftRow[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const holeCount = course.holes;
+  const holeCount =
+    mode === "combined" && combinedHoleCount != null
+      ? combinedHoleCount
+      : course.holes;
 
   const fetchHoles = useCallback(async () => {
     setLoading(true);
@@ -132,24 +155,17 @@ export function CourseHolesEditor({ clubId, course }: CourseHolesEditorProps) {
     return holes.reduce((sum, h) => sum + h.par, 0);
   }, [holes]);
 
-  const openEditor = () => {
-    setSaveError(null);
-    setDraft(buildDraft(holes ?? [], holeCount));
-    setEditorOpen(true);
-  };
-
-  const closeEditor = () => {
-    setEditorOpen(false);
-    setSaveError(null);
-  };
-
   const totalParDraft = useMemo(
     () => draft.reduce((sum, r) => sum + r.par, 0),
     [draft]
   );
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  useLayoutEffect(() => {
+    if (mode !== "combined") return;
+    setDraft(buildDraft(holes ?? [], holeCount));
+  }, [mode, holes, holeCount]);
+
+  const saveHolesInternal = useCallback(async (): Promise<boolean> => {
     setSaveError(null);
     setSaving(true);
     try {
@@ -170,18 +186,26 @@ export function CourseHolesEditor({ clubId, course }: CourseHolesEditorProps) {
           error?: string;
         };
         setSaveError(data.error ?? "Failed to save holes");
-        return;
+        return false;
       }
       const next = (await res.json()) as ApiHole[];
       setHoles(next);
-      toast.success("Holes saved");
-      setEditorOpen(false);
+      return true;
     } catch {
       setSaveError("Failed to save holes");
+      return false;
     } finally {
       setSaving(false);
     }
-  }
+  }, [clubId, course.id, draft, token]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      saveHoles: saveHolesInternal,
+    }),
+    [saveHolesInternal]
+  );
 
   if (sessionStatus === "loading" || loading) {
     return (
@@ -200,159 +224,125 @@ export function CourseHolesEditor({ clubId, course }: CourseHolesEditorProps) {
   }
 
   const configured = (holes?.length ?? 0) > 0;
-  const showSetup = !configured && !editorOpen;
+
+  if (mode === "summary") {
+    if (!configured) {
+      return (
+        <p className="text-xs text-muted">
+          No hole details yet. Click <span className="font-semibold">Edit</span>{" "}
+          to configure.
+        </p>
+      );
+    }
+    return (
+      <p className="text-xs text-muted">
+        Par {totalParSaved} · {holes?.length ?? 0} holes configured
+      </p>
+    );
+  }
 
   return (
-    <div className="mt-2 space-y-2">
-      {showSetup && (
-        <button
-          type="button"
-          onClick={openEditor}
-          className="rounded-lg border border-stone bg-white px-3 py-2 text-sm font-semibold text-fairway shadow-sm hover:bg-cream/50"
-        >
-          Set up holes
-        </button>
-      )}
-
-      {configured && !editorOpen && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-muted">
-            Par {totalParSaved} · {holes?.length ?? 0} holes configured
-          </p>
-          <button
-            type="button"
-            onClick={openEditor}
-            className="text-xs font-semibold text-fairway hover:underline"
-          >
-            Edit holes
-          </button>
-        </div>
-      )}
-
-      {editorOpen && (
-        <form
-          onSubmit={handleSave}
-          className="rounded-xl border border-stone bg-white p-4 shadow-sm"
-        >
-          <h4 className="mb-3 font-display text-sm text-ink">
-            Hole configuration
-          </h4>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[320px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-stone bg-cream/50 text-left text-[10px] font-bold uppercase tracking-widest text-muted">
-                  <th className="px-2 py-2">Hole</th>
-                  <th className="px-2 py-2">Par</th>
-                  <th className="px-2 py-2">HCP</th>
-                  <th className="px-2 py-2">Yds</th>
-                </tr>
-              </thead>
-              <tbody>
-                {draft.map((row, idx) => (
-                  <tr
-                    key={row.holeNumber}
-                    className={idx % 2 === 0 ? "bg-white" : "bg-cream/20"}
-                  >
-                    <td className="px-2 py-2 font-medium text-ink">
-                      {row.holeNumber}
-                    </td>
-                    <td className="px-2 py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {([3, 4, 5] as const).map((p) => (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() =>
-                              setDraft((d) =>
-                                d.map((x) =>
-                                  x.holeNumber === row.holeNumber
-                                    ? { ...x, par: p }
-                                    : x
-                                )
-                              )
-                            }
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-                              row.par === p
-                                ? "bg-fairway text-white"
-                                : "border border-stone bg-white text-ink hover:border-fairway/50"
-                            }`}
-                          >
-                            {p}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={1}
-                        max={18}
-                        inputMode="numeric"
-                        placeholder="HCP"
-                        value={row.handicapText}
-                        onChange={(e) => {
-                          const v = e.target.value;
+    <div className="mt-4 space-y-2">
+      <h4 className="font-display text-sm text-ink">Hole configuration</h4>
+      <div className="overflow-x-auto rounded-xl border border-stone bg-white">
+        <table className="w-full min-w-[320px] border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-stone bg-cream/50 text-left text-[10px] font-bold uppercase tracking-widest text-muted">
+              <th className="px-2 py-2">Hole</th>
+              <th className="px-2 py-2">Par</th>
+              <th className="px-2 py-2">HCP</th>
+              <th className="px-2 py-2">Yds</th>
+            </tr>
+          </thead>
+          <tbody>
+            {draft.map((row, idx) => (
+              <tr
+                key={row.holeNumber}
+                className={idx % 2 === 0 ? "bg-white" : "bg-cream/20"}
+              >
+                <td className="px-2 py-2 font-medium text-ink">
+                  {row.holeNumber}
+                </td>
+                <td className="px-2 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {([3, 4, 5] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() =>
                           setDraft((d) =>
                             d.map((x) =>
                               x.holeNumber === row.holeNumber
-                                ? { ...x, handicapText: v }
+                                ? { ...x, par: p }
                                 : x
                             )
-                          );
-                        }}
-                        className="w-full min-w-[3.5rem] rounded-lg border border-stone px-2 py-1.5 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
-                      />
-                    </td>
-                    <td className="px-2 py-2">
-                      <input
-                        type="number"
-                        min={1}
-                        max={1000}
-                        inputMode="numeric"
-                        placeholder="Yds"
-                        value={row.yardageText}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setDraft((d) =>
-                            d.map((x) =>
-                              x.holeNumber === row.holeNumber
-                                ? { ...x, yardageText: v }
-                                : x
-                            )
-                          );
-                        }}
-                        className="w-full min-w-[3.5rem] rounded-lg border border-stone px-2 py-1.5 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 text-sm font-medium text-ink">
-            Total par: {totalParDraft}
-          </p>
-          {saveError && (
-            <p className="mt-2 text-sm text-red-600">{saveError}</p>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded-lg bg-fairway px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-fairway/90 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              onClick={closeEditor}
-              className="rounded-lg border border-stone px-4 py-2 text-sm font-semibold text-ink hover:bg-cream/50"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
+                          )
+                        }
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                          row.par === p
+                            ? "bg-fairway text-white"
+                            : "border border-stone bg-white text-ink hover:border-fairway/50"
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={18}
+                    inputMode="numeric"
+                    placeholder="HCP"
+                    value={row.handicapText}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDraft((d) =>
+                        d.map((x) =>
+                          x.holeNumber === row.holeNumber
+                            ? { ...x, handicapText: v }
+                            : x
+                        )
+                      );
+                    }}
+                    className="w-full min-w-[3.5rem] rounded-lg border border-stone px-2 py-1.5 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
+                  />
+                </td>
+                <td className="px-2 py-2">
+                  <input
+                    type="number"
+                    min={1}
+                    max={1000}
+                    inputMode="numeric"
+                    placeholder="Yds"
+                    value={row.yardageText}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDraft((d) =>
+                        d.map((x) =>
+                          x.holeNumber === row.holeNumber
+                            ? { ...x, yardageText: v }
+                            : x
+                        )
+                      );
+                    }}
+                    className="w-full min-w-[3.5rem] rounded-lg border border-stone px-2 py-1.5 text-sm text-ink placeholder-muted focus:border-fairway focus:outline-none focus:ring-1 focus:ring-fairway"
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-sm font-medium text-ink">Total par: {totalParDraft}</p>
+      {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+      {saving && (
+        <p className="text-xs text-muted" aria-live="polite">
+          Saving holes…
+        </p>
       )}
     </div>
   );
-}
+});

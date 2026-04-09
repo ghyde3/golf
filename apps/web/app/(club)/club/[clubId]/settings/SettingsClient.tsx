@@ -1,5 +1,6 @@
 "use client";
 
+import { BookingFeeEditor } from "@/components/club/BookingFeeEditor";
 import { ListingImageUrlEditor } from "@/components/club/ListingImageUrlEditor";
 import { ClubListingTagsEditor } from "@/components/club/ClubListingTagsEditor";
 import { useState } from "react";
@@ -60,10 +61,12 @@ export function SettingsClient({
   clubId,
   configs: initial,
   initialHeroImageUrl,
+  initialBookingFee,
 }: {
   clubId: string;
   configs: ConfigRow[];
   initialHeroImageUrl: string | null;
+  initialBookingFee: string | null;
 }) {
   const [configs, setConfigs] = useState<ConfigRow[]>(initial);
   const current = configs[0];
@@ -149,6 +152,10 @@ export function SettingsClient({
             <ListingImageUrlEditor
               patchUrl={`/api/clubs/${clubId}/profile`}
               initialHeroImageUrl={initialHeroImageUrl}
+            />
+            <BookingFeeEditor
+              clubId={clubId}
+              initialBookingFee={initialBookingFee}
             />
           </div>
         </div>

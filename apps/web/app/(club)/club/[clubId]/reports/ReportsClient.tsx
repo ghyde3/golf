@@ -1,15 +1,18 @@
 "use client";
 
 import { SetTopBar } from "@/components/club/ClubTopBarContext";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 export type ReportsPayload = {
   days: number;
+  /** UTC days after today included in series/totals (tee time). */
+  teeFutureDays?: number;
   series: {
     date: string;
     bookings: number;
@@ -34,11 +37,17 @@ export type ReportsPayload = {
 export type ScorecardReportsPayload = {
   completionRate: number;
   totalRounds: number;
-  holeAverages: {
-    holeNumber: number;
-    par: number;
-    avgScore: number;
-    sampleSize: number;
+  /** One entry per course that has scorecard data; hole rows match that course’s length (9 vs 18). */
+  scorecardCourses: {
+    courseId: string;
+    courseName: string;
+    holeCount: number;
+    holeAverages: {
+      holeNumber: number;
+      par: number;
+      avgScore: number;
+      sampleSize: number;
+    }[];
   }[];
   scoreDistribution: {
     underPar: number;
@@ -66,6 +75,11 @@ function formatDay(isoDate: string) {
     month: "short",
     day: "numeric",
   }).format(d);
+}
+
+/** YYYY-MM-DD in UTC — matches API `series[].date` (tee day). */
+function utcTodayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function difficultyClass(avgScore: number, par: number): string {
@@ -180,11 +194,15 @@ export function ReportsClient({
     [clubId, pathname, token]
   );
 
-  const maxBookings = Math.max(
-    1,
-    ...data.series.map((s) => s.bookings),
-    data.totals.bookings
+  /** Busiest day in the series (not period total) — used to scale the “peak %” bar per row. */
+  const maxBookings = Math.max(1, ...data.series.map((s) => s.bookings));
+
+  const seriesByDateDesc = useMemo(
+    () => [...data.series].sort((a, b) => b.date.localeCompare(a.date)),
+    [data.series]
   );
+
+  const utcToday = utcTodayIsoDate();
 
   const completionPct =
     scorecardData == null
@@ -224,8 +242,9 @@ export function ReportsClient({
           <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <p className="max-w-2xl text-sm text-muted">
-                Booking activity for the last {data.days} days (UTC), matching how
-                dashboard counts are computed.
+                By tee time (UTC): the last {data.days} days through today, plus the
+                next {data.teeFutureDays ?? 0} days. Totals include that full tee
+                range (not when the booking was created).
               </p>
               <label className="flex shrink-0 items-center gap-2 text-sm text-ink">
                 <span className="text-muted">Period</span>
@@ -328,7 +347,7 @@ export function ReportsClient({
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-col rounded-xl border border-stone bg-white shadow-sm">
+            <div className="flex min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border border-stone bg-white shadow-sm">
               <div className="border-b border-stone px-4 py-3">
                 <h3 className="font-display text-lg text-ink">Daily breakdown</h3>
               </div>
@@ -338,50 +357,69 @@ export function ReportsClient({
                   bookings, they will appear here.
                 </p>
               ) : (
-                <>
-                  <div className="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]">
-                    <span>Date</span>
-                    <span className="text-right">Bookings</span>
-                    <span className="text-right">Players</span>
-                    <span className="text-right">No-shows</span>
-                    <span className="text-right">Revenue</span>
-                    <span />
-                  </div>
-                  <div className="divide-y divide-stone">
-                    {data.series.map((s) => (
-                      <div
-                        key={s.date}
-                        className="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]"
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] items-center gap-2 border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]">
+                      <span>Date</span>
+                      <span className="text-right">Bookings</span>
+                      <span className="text-right">Players</span>
+                      <span className="text-right">No-shows</span>
+                      <span className="text-right">Revenue</span>
+                      <span
+                        className="block min-w-0 whitespace-nowrap text-left leading-tight"
+                        title="Booking count for that day vs. the busiest day in this period (not revenue)."
                       >
-                        <span className="text-sm font-medium text-ink">
-                          {formatDay(s.date)}
-                        </span>
-                        <span className="text-right text-sm tabular-nums text-ink">
-                          {s.bookings}
-                        </span>
-                        <span className="text-right text-sm tabular-nums text-ink">
-                          {s.players}
-                        </span>
-                        <span className="text-right text-sm tabular-nums text-ink">
-                          {s.noShows}
-                        </span>
-                        <span className="text-right text-sm tabular-nums text-ink">
-                          {usd.format(s.revenueGreenFees + s.revenueAddons)}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="h-2 overflow-hidden rounded-full bg-cream">
+                        Peak %
+                      </span>
+                    </div>
+                    <div className="divide-y divide-stone">
+                      {seriesByDateDesc.map((s) => {
+                        const isToday = s.date === utcToday;
+                        return (
+                          <div
+                            key={s.date}
+                            aria-current={isToday ? "date" : undefined}
+                            title={isToday ? "Today (UTC)" : undefined}
+                            className={cn(
+                              "grid grid-cols-[minmax(0,1fr)_64px_64px_64px_80px_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_72px_72px_72px_88px_1fr]",
+                              isToday &&
+                                "bg-fairway/10 ring-1 ring-inset ring-fairway/25"
+                            )}
+                          >
+                            <span className="text-sm font-medium text-ink">
+                              {formatDay(s.date)}
+                            </span>
+                            <span className="text-right text-sm tabular-nums text-ink">
+                              {s.bookings}
+                            </span>
+                            <span className="text-right text-sm tabular-nums text-ink">
+                              {s.players}
+                            </span>
+                            <span className="text-right text-sm tabular-nums text-ink">
+                              {s.noShows}
+                            </span>
+                            <span className="text-right text-sm tabular-nums text-ink">
+                              {usd.format(s.revenueGreenFees + s.revenueAddons)}
+                            </span>
                             <div
-                              className="h-full rounded-full bg-fairway/70"
-                              style={{
-                                width: `${Math.round((s.bookings / maxBookings) * 100)}%`,
-                              }}
-                            />
+                              className="min-w-0"
+                              title={`${s.bookings} bookings (${Math.round((s.bookings / maxBookings) * 100)}% of busiest day in range, ${maxBookings} bookings)`}
+                            >
+                              <div className="h-2 overflow-hidden rounded-full bg-cream">
+                                <div
+                                  className="h-full rounded-full bg-fairway/70"
+                                  style={{
+                                    width: `${Math.round((s.bookings / maxBookings) * 100)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
+                        );
+                      })}
+                    </div>
                   </div>
-                </>
+                </div>
               )}
             </div>
 
@@ -461,47 +499,57 @@ export function ReportsClient({
                   </span>
                 </div>
 
-                {scorecardData.holeAverages.length === 0 ? (
+                {scorecardData.scorecardCourses.length === 0 ? (
                   <p className="rounded-xl border border-dashed border-stone bg-cream/30 px-4 py-8 text-center text-sm text-muted">
                     No scorecard data yet. Set up hole configuration and log some
                     rounds to see stats.
                   </p>
                 ) : (
-                  <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-stone bg-white shadow-sm">
-                    <div className="border-b border-stone px-4 py-3">
-                      <h3 className="font-display text-lg text-ink">
-                        Course difficulty by hole
-                      </h3>
-                    </div>
-                    <div className="grid grid-cols-[48px_1fr_1fr_1fr] border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[56px_1fr_1fr_1fr]">
-                      <span>Hole #</span>
-                      <span>Par</span>
-                      <span className="text-right sm:text-left">Avg score</span>
-                      <span>Difficulty</span>
-                    </div>
-                    <div className="max-h-[min(60vh,480px)] divide-y divide-stone overflow-y-auto">
-                      {scorecardData.holeAverages.map((row) => (
-                        <div
-                          key={`${row.holeNumber}-${row.par}`}
-                          className="grid grid-cols-[48px_1fr_1fr_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[56px_1fr_1fr_1fr]"
-                        >
-                          <span className="text-sm font-medium text-ink">
-                            {row.holeNumber}
-                          </span>
-                          <span className="text-sm tabular-nums text-ink">
-                            {row.par}
-                          </span>
-                          <span className="text-right text-sm tabular-nums text-ink sm:text-left">
-                            {row.avgScore.toFixed(2)}
-                          </span>
-                          <span
-                            className={`text-sm ${difficultyClass(row.avgScore, row.par)}`}
-                          >
-                            {difficultyDeltaLabel(row.avgScore, row.par)} vs par
-                          </span>
+                  <div className="flex flex-col gap-6">
+                    {scorecardData.scorecardCourses.map((course) => (
+                      <div
+                        key={course.courseId}
+                        className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-stone bg-white shadow-sm"
+                      >
+                        <div className="border-b border-stone px-4 py-3">
+                          <h3 className="font-display text-lg text-ink">
+                            {course.courseName}
+                          </h3>
+                          <p className="mt-0.5 text-xs text-muted">
+                            {course.holeCount} holes · difficulty by hole (avg strokes)
+                          </p>
                         </div>
-                      ))}
-                    </div>
+                        <div className="grid grid-cols-[48px_1fr_1fr_1fr] border-b border-stone bg-cream/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-muted sm:grid-cols-[56px_1fr_1fr_1fr]">
+                          <span>Hole #</span>
+                          <span>Par</span>
+                          <span className="text-right sm:text-left">Avg score</span>
+                          <span>Difficulty</span>
+                        </div>
+                        <div className="max-h-[min(50vh,360px)] divide-y divide-stone overflow-y-auto">
+                          {course.holeAverages.map((row) => (
+                            <div
+                              key={`${course.courseId}-${row.holeNumber}`}
+                              className="grid grid-cols-[48px_1fr_1fr_1fr] items-center gap-2 px-4 py-3 sm:grid-cols-[56px_1fr_1fr_1fr]"
+                            >
+                              <span className="text-sm font-medium text-ink">
+                                {row.holeNumber}
+                              </span>
+                              <span className="text-sm tabular-nums text-ink">
+                                {row.par}
+                              </span>
+                              <span className="text-right text-sm tabular-nums text-ink sm:text-left">
+                                {row.avgScore.toFixed(2)}
+                              </span>
+                              <span
+                                className={`text-sm ${difficultyClass(row.avgScore, row.par)}`}
+                              >
+                                {difficultyDeltaLabel(row.avgScore, row.par)} vs par
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </>

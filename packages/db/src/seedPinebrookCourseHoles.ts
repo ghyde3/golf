@@ -1,5 +1,5 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import * as schema from "./schema/index";
 import { courseHoles, courses } from "./schema/clubs";
 
@@ -144,5 +144,11 @@ export async function seedPinebrookCourseHoles(db: DrizzleDB, clubId: string) {
           },
         });
     }
+
+    await db
+      .delete(courseHoles)
+      .where(
+        and(eq(courseHoles.courseId, course.id), gt(courseHoles.holeNumber, layout.length))
+      );
   }
 }

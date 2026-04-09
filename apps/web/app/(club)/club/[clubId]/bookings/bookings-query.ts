@@ -33,7 +33,7 @@ export function parseBookingsSearchParams(
     courseId: first(searchParams.courseId) ?? "",
     from: first(searchParams.from) ?? "",
     to: first(searchParams.to) ?? "",
-    range: first(searchParams.range) ?? "created",
+    range: first(searchParams.range) ?? "tee",
   };
 }
 

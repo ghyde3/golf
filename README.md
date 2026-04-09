@@ -90,17 +90,49 @@ Typical patterns:
 |-----------|------------|
 | **New empty DB** (new Railway Postgres, fresh instance) | Point `DATABASE_URL` at it, then run **`pnpm db:migrate`** once. Then optionally seed (below). |
 | **Release with schema changes** | Deploy code, then run **`pnpm db:migrate`** against staging/production **before** or **as** traffic hits the new API (order matters for zero-downtime — often migrate first, then deploy, or use expand/contract patterns for risky changes). |
-| **Demo / staging** | Same migrations as prod. For **fake data** (clubs, demo users), run **`pnpm seed`** (and optionally **`pnpm seed:bookings`**) from a machine with `DATABASE_URL` set to that database — **not** usually wired into the Railway build step. |
+| **Demo / staging** | Same migrations as prod. For **fake data** (clubs, demo users), run **`pnpm seed`** (and optionally **`pnpm seed:bookings`**) — **not** usually wired into the Railway build step. |
 
-**Seeds** are for **development and demos**: idempotent base data (`pnpm seed`), optional booking density (`pnpm seed:bookings`), etc. **Do not** auto-run destructive or demo seeds on **real production** unless you explicitly intend that. For **testing and demo** environments, running seeds after migrate is normal.
-
-**Practical ways to run migrate/seed against Railway:**
-
-- **One-off locally:** `DATABASE_URL='postgresql://…' pnpm db:migrate` then `pnpm seed` (repo root, same as local but with remote URL).
-- **Railway CLI / shell:** Open a shell attached to the service or use `railway run` with env injected, then the same commands (ensure the repo or `drizzle` config path is available).
-- **CI job** (optional): on merge to `main`, run migrations against a staging DB URL from secrets.
+**Seeds** are for **development and demos**: idempotent base data (`pnpm seed`), optional booking density (`pnpm seed:bookings`), etc. **Do not** auto-run destructive or demo seeds on **real production** unless you explicitly intend that.
 
 **Vercel** does not run Postgres migrations; only the **API** (or any worker) needs a DB, and migrations are a **separate operational step** tied to `DATABASE_URL`.
+
+#### Remote migrate / seed on Railway (recommended)
+
+Use the **Railway CLI** (`railway login`, `railway link` from the repo root). The API service’s **`DATABASE_URL`** uses Railway’s **private** hostname (`postgres.railway.internal`), which **only resolves inside Railway’s network** — so prefer running commands **inside the deployed API container**, where Postgres is reachable on the private network and the repo layout matches what CI builds.
+
+1. **Deploy the API** so `/app` includes the latest migration files and **`packages/db/src/seed.ts`** (changes to seed scripts are not used until you redeploy).
+2. **Migrate** (apply schema):
+
+   ```bash
+   railway ssh -s '@teetimes/api' -e production -- sh -c 'cd /app && pnpm db:migrate'
+   ```
+
+3. **Seed** (demo users, clubs, Pinebrook courses/holes, inventory/tags, synthetic bookings/scorecards as implemented in `seed.ts`):
+
+   ```bash
+   railway ssh -s '@teetimes/api' -e production -- sh -c 'cd /app && pnpm seed'
+   ```
+
+4. Optional — **extra tee slots + bookings** for dense UI demos:
+
+   ```bash
+   railway ssh -s '@teetimes/api' -e production -- sh -c 'cd /app && pnpm seed:bookings'
+   ```
+
+Change **`-e production`** if you use another Railway environment. The service name must match your project (often **`@teetimes/api`**; confirm with `railway status`).
+
+**From your laptop without SSH:** `railway run` injects the API’s **`DATABASE_URL`**, but that private hostname **does not resolve** on your machine. The **Postgres** service exposes **`DATABASE_PUBLIC_URL`** (TCP proxy). You can migrate or seed locally by mapping it for one command:
+
+```bash
+railway run -s Postgres -e production -- sh -c 'export DATABASE_URL="$DATABASE_PUBLIC_URL" && pnpm db:migrate'
+railway run -s Postgres -e production -- sh -c 'export DATABASE_URL="$DATABASE_PUBLIC_URL" && pnpm seed'
+```
+
+Run from the **repository root**. The public proxy adds latency; long seeds may run for a while with little log output. Prefer **`railway ssh`** when you can.
+
+**CI** (optional): on merge to `main`, run migrations against a staging DB URL from GitHub secrets; keep production migrate/seed as a deliberate step unless you fully automate it.
+
+**Troubleshooting:** Always **migrate before seed**. **`railway ssh`** runs the **deployed** tree at `/app` — if you change migrations or `seed.ts`, **redeploy the API** first, then SSH again. A **busy production API** can hold row locks that make seeding slow; prefer a quiet window or SSH (private DB path) over the public proxy. Do not paste production URLs or passwords into tickets or chat.
 
 ## Demo credentials (seeded users)
 

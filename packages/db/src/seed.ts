@@ -89,7 +89,9 @@ async function seed() {
       ],
       timezone: "America/New_York",
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing({
+      target: [clubConfig.clubId, clubConfig.effectiveFrom],
+    });
 
   await dedupeCoursesByName(clubId, PINEBROOK_COURSE_NAMES);
 
@@ -363,7 +365,9 @@ async function seed() {
         ],
         timezone: "America/New_York",
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing({
+        target: [clubConfig.clubId, clubConfig.effectiveFrom],
+      });
 
     const existingN = await db.query.courses.findMany({
       where: eq(courses.clubId, cid),

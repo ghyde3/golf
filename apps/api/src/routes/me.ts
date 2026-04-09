@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm";
 import {
   db,
+  users,
   bookings,
   teeSlots,
   courses,
@@ -20,7 +21,7 @@ import {
   clubConfig,
   bookingAddonLines,
 } from "@teetimes/db";
-import { MeBookingsQuerySchema } from "@teetimes/validators";
+import { MeBookingsQuerySchema, ProfileUpdateSchema } from "@teetimes/validators";
 import { authenticate } from "../middleware/auth";
 import { isCancellable } from "../lib/cancellation";
 import { resolveConfig } from "../lib/configResolver";
@@ -222,6 +223,9 @@ router.get("/bookings", authenticate, async (req, res) => {
         clubName: club.name,
         clubSlug: club.slug,
         timezone,
+        clubId: club.id,
+        courseId: course.id,
+        holes: course.holes,
       },
     };
   }
@@ -230,6 +234,89 @@ router.get("/bookings", authenticate, async (req, res) => {
     upcoming: upcomingRows.map((r) => mapRow(r, "upcoming")),
     past: pastRows.map((r) => mapRow(r, "past")),
     total,
+  });
+});
+
+router.get("/profile", authenticate, async (req, res) => {
+  const auth = req.auth;
+  if (!auth) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, auth.userId),
+    columns: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      notificationPrefs: true,
+      createdAt: true,
+    },
+  });
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  res.json({
+    name: user.name,
+    email: user.email,
+    phone: user.phone ?? null,
+    createdAt: user.createdAt?.toISOString() ?? null,
+    notificationPrefs:
+      (user.notificationPrefs as { reminders?: boolean } | null) ?? null,
+  });
+});
+
+router.patch("/profile", authenticate, async (req, res) => {
+  const auth = req.auth;
+  if (!auth) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+
+  const parsed = ProfileUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({
+      error: "Invalid body",
+      details: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const { name, phone, notificationPrefs } = parsed.data;
+  const updates: Partial<typeof users.$inferInsert> = {};
+  if (name !== undefined) updates.name = name;
+  if (phone !== undefined) updates.phone = phone;
+  if (notificationPrefs !== undefined)
+    updates.notificationPrefs = notificationPrefs;
+
+  if (Object.keys(updates).length === 0) {
+    res.status(400).json({ error: "No fields to update" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(users)
+    .set(updates)
+    .where(eq(users.id, auth.userId))
+    .returning({
+      name: users.name,
+      email: users.email,
+      phone: users.phone,
+      notificationPrefs: users.notificationPrefs,
+      createdAt: users.createdAt,
+    });
+
+  res.json({
+    name: updated.name,
+    email: updated.email,
+    phone: updated.phone ?? null,
+    createdAt: updated.createdAt?.toISOString() ?? null,
+    notificationPrefs:
+      (updated.notificationPrefs as { reminders?: boolean } | null) ?? null,
   });
 });
 

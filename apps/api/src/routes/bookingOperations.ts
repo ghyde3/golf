@@ -24,7 +24,7 @@ import {
 } from "../lib/auth";
 import { generateUniqueBookingRef } from "../lib/bookingRef";
 import { invalidateAvailabilityCache } from "../lib/availabilityCache";
-import { enqueueEmail } from "../lib/queue";
+import { enqueueBookingJob, enqueueEmail } from "../lib/queue";
 import {
   signGuestCancelToken,
   verifyGuestCancelToken,
@@ -225,6 +225,7 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
     teeSlotId?: unknown;
     courseId?: unknown;
     datetime?: unknown;
+    playersCount?: unknown;
   };
 
   const hasTeeSlotId =
@@ -234,10 +235,11 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
     body.courseId.trim().length > 0 &&
     typeof body.datetime === "string" &&
     body.datetime.trim().length > 0;
+  const hasPlayersCount = typeof body.playersCount === "number";
 
-  if (!hasTeeSlotId && !hasCourseDatetime) {
+  if (!hasTeeSlotId && !hasCourseDatetime && !hasPlayersCount) {
     res.status(400).json({
-      error: "Provide teeSlotId or courseId and datetime",
+      error: "Provide teeSlotId, courseId+datetime, or playersCount",
     });
     return;
   }
@@ -261,12 +263,122 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
     return;
   }
 
-  const clubId = booking.teeSlot.course.club.id;
-  if (!canAccessClub(auth.roles, clubId)) {
-    sendForbidden(res);
+  const isOwner = booking.userId === auth.userId;
+  const isStaff = canAccessClub(auth.roles, booking.teeSlot.course.club.id);
+
+  if (!isOwner && !isStaff) {
+    res.status(403).json({ error: "Forbidden" });
     return;
   }
 
+  // Golfer-owners must be within the cancellation window
+  if (isOwner && !isStaff) {
+    const cfgRows = await db.query.clubConfig.findMany({
+      where: eq(clubConfig.clubId, booking.teeSlot.course.club.id),
+      orderBy: [desc(clubConfig.effectiveFrom)],
+    });
+    const mapped = cfgRows.map((c) => ({
+      ...c,
+      effectiveFrom: effFrom(c.effectiveFrom),
+    }));
+    const cfg = resolveConfig(mapped, new Date(booking.teeSlot.datetime));
+    const hours = cfg?.cancellationHours ?? 24;
+    if (!isCancellable(booking.teeSlot.datetime, hours)) {
+      res.status(403).json({
+        error: "Outside cancellation window",
+        code: "OUTSIDE_WINDOW",
+      });
+      return;
+    }
+  }
+
+  const applyPlayersCountMutation = async (
+    b: NonNullable<typeof booking>,
+    newCount: number
+  ): Promise<{ ok: true } | { error: "slot_full" }> => {
+    if (!b.teeSlot) {
+      return { ok: true };
+    }
+    if (newCount === b.playersCount) {
+      return { ok: true };
+    }
+    const maxPlayers = b.teeSlot.maxPlayers ?? 4;
+    const currentOthers =
+      (b.teeSlot.bookedPlayers ?? 0) - b.playersCount;
+    if (currentOthers + newCount > maxPlayers) {
+      return { error: "slot_full" };
+    }
+    const delta = newCount - b.playersCount;
+    try {
+      await db.transaction(async (tx) => {
+        await tx
+          .update(bookings)
+          .set({ playersCount: newCount })
+          .where(eq(bookings.id, bookingId));
+        const [row] = await tx
+          .update(teeSlots)
+          .set({
+            bookedPlayers: sql`${teeSlots.bookedPlayers} + ${delta}`,
+          })
+          .where(
+            and(
+              eq(teeSlots.id, b.teeSlotId!),
+              sql`${teeSlots.bookedPlayers} + ${delta} <= ${teeSlots.maxPlayers}`,
+              sql`${teeSlots.bookedPlayers} + ${delta} >= 0`
+            )
+          )
+          .returning();
+        if (!row) {
+          throw new Error("PLAYERS_COUNT_CAPACITY");
+        }
+      });
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (msg === "PLAYERS_COUNT_CAPACITY") {
+        return { error: "slot_full" };
+      }
+      throw e;
+    }
+    const dateStr = b.teeSlot.datetime.toISOString().split("T")[0];
+    await invalidateAvailabilityCache(
+      b.teeSlot.course.club.id,
+      b.teeSlot.courseId,
+      dateStr
+    );
+    return { ok: true };
+  };
+
+  const wantsMove = hasTeeSlotId || hasCourseDatetime;
+
+  if (!wantsMove) {
+    if (
+      typeof body.playersCount === "number" &&
+      body.playersCount !== booking.playersCount
+    ) {
+      const result = await applyPlayersCountMutation(
+        booking,
+        body.playersCount
+      );
+      if ("error" in result) {
+        res.status(409).json({
+          error: "Not enough capacity for this player count",
+          code: "SLOT_FULL",
+        });
+        return;
+      }
+    }
+    res.json({
+      ok: true,
+      bookingId,
+      playersCount:
+        typeof body.playersCount === "number"
+          ? body.playersCount
+          : booking.playersCount,
+    });
+    return;
+  }
+
+  const clubId = booking.teeSlot.course.club.id;
   const oldSlot = booking.teeSlot;
   const pc = booking.playersCount;
   const oldSlotId = oldSlot.id;
@@ -289,7 +401,31 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
       where: and(eq(teeSlots.courseId, cid), eq(teeSlots.datetime, dt)),
     });
     if (atTarget && atTarget.id === oldSlotId) {
-      res.json({ ok: true, bookingId, teeSlotId: atTarget.id });
+      if (
+        typeof body.playersCount === "number" &&
+        body.playersCount !== booking.playersCount
+      ) {
+        const result = await applyPlayersCountMutation(
+          booking,
+          body.playersCount
+        );
+        if ("error" in result) {
+          res.status(409).json({
+            error: "Not enough capacity for this player count",
+            code: "SLOT_FULL",
+          });
+          return;
+        }
+      }
+      res.json({
+        ok: true,
+        bookingId,
+        teeSlotId: atTarget.id,
+        playersCount:
+          typeof body.playersCount === "number"
+            ? body.playersCount
+            : booking.playersCount,
+      });
       return;
     }
   }
@@ -297,7 +433,31 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
   if (hasTeeSlotId) {
     const tid = String(body.teeSlotId).trim();
     if (tid === oldSlotId) {
-      res.json({ ok: true, bookingId, teeSlotId: tid });
+      if (
+        typeof body.playersCount === "number" &&
+        body.playersCount !== booking.playersCount
+      ) {
+        const result = await applyPlayersCountMutation(
+          booking,
+          body.playersCount
+        );
+        if ("error" in result) {
+          res.status(409).json({
+            error: "Not enough capacity for this player count",
+            code: "SLOT_FULL",
+          });
+          return;
+        }
+      }
+      res.json({
+        ok: true,
+        bookingId,
+        teeSlotId: tid,
+        playersCount:
+          typeof body.playersCount === "number"
+            ? body.playersCount
+            : booking.playersCount,
+      });
       return;
     }
     const newSlotPre = await db.query.teeSlots.findFirst({
@@ -459,7 +619,41 @@ router.patch("/:bookingId", authenticate, async (req, res) => {
       );
     }
 
-    res.json({ ok: true, bookingId, teeSlotId: finalTargetId });
+    let responsePlayersCount = booking.playersCount;
+    if (
+      typeof body.playersCount === "number" &&
+      body.playersCount !== booking.playersCount
+    ) {
+      const reloaded = await db.query.bookings.findFirst({
+        where: and(eq(bookings.id, bookingId), isNull(bookings.deletedAt)),
+        with: {
+          teeSlot: { with: { course: { with: { club: true } } } },
+        },
+      });
+      if (!reloaded?.teeSlot) {
+        res.status(500).json({ error: "Booking not found after move" });
+        return;
+      }
+      const result = await applyPlayersCountMutation(
+        reloaded,
+        body.playersCount
+      );
+      if ("error" in result) {
+        res.status(409).json({
+          error: "Not enough capacity for this player count",
+          code: "SLOT_FULL",
+        });
+        return;
+      }
+      responsePlayersCount = body.playersCount;
+    }
+
+    res.json({
+      ok: true,
+      bookingId,
+      teeSlotId: finalTargetId,
+      playersCount: responsePlayersCount,
+    });
   } catch (e) {
     if (e instanceof AddOnUnavailableError) {
       res.status(409).json({
@@ -745,6 +939,16 @@ router.post("/", authenticate, async (req, res) => {
     await enqueueEmail("email:booking-confirmation", {
       bookingId: booking.id,
     });
+
+    const noShowDelay =
+      new Date(updatedSlot.datetime).getTime() + 15 * 60 * 1000 - Date.now();
+    if (noShowDelay > 0) {
+      await enqueueBookingJob(
+        "booking:auto-noshow",
+        { bookingId: booking.id },
+        { delay: noShowDelay }
+      );
+    }
 
     res.status(201).json({
       id: booking.id,

@@ -3,6 +3,7 @@ import path from "path";
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
 import app from "./app";
 import { startEmailWorker } from "./workers/emailWorker";
+import { startBookingWorker } from "./workers/bookingWorker";
 
 const PORT = process.env.PORT || 3001;
 
@@ -11,4 +12,5 @@ app.listen(PORT, () => {
   if (process.env.DISABLE_EMAIL_WORKER !== "1") {
     startEmailWorker();
   }
+  startBookingWorker();
 });

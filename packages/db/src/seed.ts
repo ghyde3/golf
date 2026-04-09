@@ -6,23 +6,22 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { clubs, clubConfig, courses, teeSlots } from "./schema/index";
 import { users, userRoles } from "./schema/index";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import * as schema from "./schema/index";
 import {
   seedClubTagAssignments,
   seedClubTagDefinitions,
 } from "./seedTags";
 import { seedInventoryForClub } from "./seedInventory";
+import {
+  PINEBROOK_COURSE_NAMES,
+  seedPinebrookCourseHoles,
+} from "./seedPinebrookCourseHoles";
+import { seedPinebrookBookings } from "./seedPinebrookBookings";
+import { seedPinebrookScorecards } from "./seedPinebrookScorecards";
 
 const client = postgres(process.env.DATABASE_URL!);
 const db = drizzle(client, { schema });
-
-const PINEBROOK_COURSE_NAMES = [
-  "The Championship",
-  "The Meadows",
-  "The Pines",
-  "The Lakes",
-] as const;
 
 /** Merge tee_slots onto the kept course row and delete duplicate course rows (same club + name). */
 async function dedupeCoursesByName(clubId: string, names: readonly string[]) {
@@ -54,6 +53,7 @@ async function seed() {
     .values({
       name: "Pinebrook Golf Club",
       slug: "pinebrook",
+      bookingFee: "65",
       description:
         "A classic 18-hole parkland layout with four distinct courses.",
       city: "Ridgewood",
@@ -108,6 +108,22 @@ async function seed() {
     }
   }
 
+  // Keep `courses.holes` aligned with Pinebrook layouts (fixes legacy / swapped rows).
+  const pinebrookHoleCounts: Record<(typeof PINEBROOK_COURSE_NAMES)[number], number> = {
+    "The Championship": 18,
+    "The Meadows": 18,
+    "The Pines": 18,
+    "The Lakes": 9,
+  };
+  for (const name of PINEBROOK_COURSE_NAMES) {
+    await db
+      .update(courses)
+      .set({ holes: pinebrookHoleCounts[name] })
+      .where(and(eq(courses.clubId, clubId), eq(courses.name, name)));
+  }
+
+  await seedPinebrookCourseHoles(db, clubId);
+
   // Create users — dev-only password for all seeded accounts: `devpass`
   const passwordHash =
     "$2b$10$U98sJqo9st.7iMFXFac/detsKGsmYGNXg4gO5ATPFj9hB0SKcsW5m";
@@ -136,22 +152,52 @@ async function seed() {
   });
 
   if (adminUser) {
-    await db
-      .insert(userRoles)
-      .values({ userId: adminUser.id, role: "platform_admin", clubId: null })
-      .onConflictDoNothing();
+    const hasPlatform = await db.query.userRoles.findFirst({
+      where: and(
+        eq(userRoles.userId, adminUser.id),
+        eq(userRoles.role, "platform_admin"),
+        isNull(userRoles.clubId)
+      ),
+    });
+    if (!hasPlatform) {
+      await db.insert(userRoles).values({
+        userId: adminUser.id,
+        role: "platform_admin",
+        clubId: null,
+      });
+    }
   }
   if (ownerUser) {
-    await db
-      .insert(userRoles)
-      .values({ userId: ownerUser.id, role: "club_admin", clubId })
-      .onConflictDoNothing();
+    const hasOwner = await db.query.userRoles.findFirst({
+      where: and(
+        eq(userRoles.userId, ownerUser.id),
+        eq(userRoles.clubId, clubId),
+        eq(userRoles.role, "club_admin")
+      ),
+    });
+    if (!hasOwner) {
+      await db.insert(userRoles).values({
+        userId: ownerUser.id,
+        role: "club_admin",
+        clubId,
+      });
+    }
   }
   if (staffUser) {
-    await db
-      .insert(userRoles)
-      .values({ userId: staffUser.id, role: "staff", clubId })
-      .onConflictDoNothing();
+    const hasStaff = await db.query.userRoles.findFirst({
+      where: and(
+        eq(userRoles.userId, staffUser.id),
+        eq(userRoles.clubId, clubId),
+        eq(userRoles.role, "staff")
+      ),
+    });
+    if (!hasStaff) {
+      await db.insert(userRoles).values({
+        userId: staffUser.id,
+        role: "staff",
+        clubId,
+      });
+    }
   }
 
   function courseRowsForCount(
@@ -410,9 +456,17 @@ async function seed() {
     await db.update(clubs).set({ heroImageUrl }).where(eq(clubs.slug, slug));
   }
 
+  await db
+    .update(clubs)
+    .set({ bookingFee: "65" })
+    .where(eq(clubs.slug, "pinebrook"));
+
   await seedClubTagAssignments(db);
 
   await seedInventoryForClub(db, clubId);
+
+  await seedPinebrookBookings(db, clubId);
+  await seedPinebrookScorecards(db);
 
   console.log("Seed complete!");
   await client.end();

@@ -13,23 +13,53 @@ import {
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
 import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { BookingDetail } from "./types";
 import { BookingDrawerAddons } from "./BookingDrawerAddons";
 
+function fmtTeeClock(iso: string, timeZone?: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(new Date(iso));
+}
+
+function fmtTeeCalendar(iso: string, timeZone?: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(new Date(iso));
+}
+
+function fmtBookedAt(iso: string, timeZone?: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  }).format(new Date(iso));
+}
+
 export function BookingDrawer({
   bookingId,
   open,
   onClose,
   onAfterChange,
+  timeZone,
 }: {
   bookingId: string | null;
   open: boolean;
   onClose: () => void;
   onAfterChange: () => void;
+  /** When set (e.g. club config), times render in this zone with no offset label. */
+  timeZone?: string;
 }) {
   const [detail, setDetail] = useState<BookingDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -190,15 +220,12 @@ export function BookingDrawer({
             <>
               <div className="rounded-xl bg-forest p-4 text-white shadow-inner">
                 <p className="font-mono text-3xl font-medium leading-tight">
-                  {format(new Date(detail.teeSlot.datetime), "h:mm a")}
+                  {fmtTeeClock(detail.teeSlot.datetime, timeZone)}
                 </p>
                 <p className="mt-1 text-sm text-white/70">
                   {detail.teeSlot.courseName} ·{" "}
-                  {format(
-                    new Date(detail.teeSlot.datetime),
-                    "MMM d, yyyy"
-                  )}{" "}
-                  · {detail.playersCount} players
+                  {fmtTeeCalendar(detail.teeSlot.datetime, timeZone)} ·{" "}
+                  {detail.playersCount} players
                 </p>
                 <p className="mt-3 font-mono text-sm text-gold-light">
                   {detail.bookingRef}
@@ -217,8 +244,7 @@ export function BookingDrawer({
                 <p className="text-ink">{detail.guestName ?? "—"}</p>
                 <p className="text-sm text-muted">{detail.guestEmail ?? "—"}</p>
                 <p className="text-sm text-muted">
-                  Booked{" "}
-                  {format(new Date(detail.createdAt), "MMM d, yyyy h:mm a")}
+                  Booked {fmtBookedAt(detail.createdAt, timeZone)}
                 </p>
               </div>
 

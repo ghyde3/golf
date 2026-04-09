@@ -1,5 +1,15 @@
 import { Router, type Request } from "express";
-import { db, clubs, clubConfig, bookings, teeSlots, courses } from "@teetimes/db";
+import {
+  db,
+  clubs,
+  clubConfig,
+  bookings,
+  teeSlots,
+  courses,
+  roundScorecards,
+  roundScorecardHoles,
+  courseHoles,
+} from "@teetimes/db";
 import {
   eq,
   desc,
@@ -19,8 +29,12 @@ import { authenticate, requireClubAccess } from "../middleware/auth";
 import { escapeLikePattern } from "../lib/escapeLike";
 import { resolveConfig, resolveHours } from "../lib/configResolver";
 import { generateSlots } from "../lib/slotGenerator";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 const router = Router({ mergeParams: true });
+
+/** Must match Pinebrook seed future window: tee times in the next N UTC days appear in reports. */
+const REPORTS_TEE_FUTURE_DAYS = 7;
 
 function paramClubId(req: Request): string | undefined {
   const raw = req.params.clubId;
@@ -99,24 +113,23 @@ router.get("/summary", async (req, res) => {
   });
 });
 
-function utcDayStart(isoDate: string): Date {
+/** Next Gregorian calendar day after `isoDate` (YYYY-MM-DD). */
+function addCalendarDayIso(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map((x) => Number.parseInt(x, 10));
-  if (
-    Number.isNaN(y) ||
-    Number.isNaN(m) ||
-    Number.isNaN(d) ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)
-  ) {
-    throw new Error("invalid date");
-  }
-  return new Date(Date.UTC(y, m - 1, d));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + 1);
+  return dt.toISOString().slice(0, 10);
 }
 
-function utcDayEndExclusive(isoDate: string): Date {
-  const start = utcDayStart(isoDate);
-  const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 1);
-  return end;
+/** Inclusive `fromStr` … `toStr` as club-local calendar days → UTC half-open [start, end). */
+function clubLocalDayRangeUtc(
+  fromStr: string,
+  toStr: string,
+  timeZone: string
+): { rangeStart: Date; rangeEnd: Date } {
+  const rangeStart = fromZonedTime(`${fromStr}T00:00:00`, timeZone);
+  const rangeEnd = fromZonedTime(`${addCalendarDayIso(toStr)}T00:00:00`, timeZone);
+  return { rangeStart, rangeEnd };
 }
 
 function effFrom(v: unknown): string {
@@ -170,7 +183,10 @@ function totalSlotsForDay(
   return n * courseCount;
 }
 
-/** Same club scope as `bookingsToday` in GET /summary. Default date range: UTC calendar day on `createdAt` (today if `from`/`to` omitted). */
+/**
+ * Default date range: club-local calendar day on `createdAt` or tee time (today if `from`/`to` omitted).
+ * `from` / `to` are interpreted as club-local YYYY-MM-DD (latest effective club config timezone).
+ */
 router.get("/bookings", async (req, res) => {
   const clubId = paramClubId(req);
   if (!clubId) {
@@ -187,8 +203,14 @@ router.get("/bookings", async (req, res) => {
     return;
   }
 
+  const cfgRow = await db.query.clubConfig.findFirst({
+    where: eq(clubConfig.clubId, clubId),
+    orderBy: [desc(clubConfig.effectiveFrom)],
+  });
+  const clubTz = cfgRow?.timezone ?? "America/New_York";
+
   const now = new Date();
-  const todayStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(now.getUTCDate()).padStart(2, "0")}`;
+  const todayStr = formatInTimeZone(now, clubTz, "yyyy-MM-dd");
 
   const rawFrom = req.query.from;
   const rawTo = req.query.to;
@@ -204,8 +226,7 @@ router.get("/bookings", async (req, res) => {
   let rangeStart: Date;
   let rangeEnd: Date;
   try {
-    rangeStart = utcDayStart(fromStr);
-    rangeEnd = utcDayEndExclusive(toStr);
+    ({ rangeStart, rangeEnd } = clubLocalDayRangeUtc(fromStr, toStr, clubTz));
   } catch {
     res.status(400).json({ error: "Invalid from/to (use YYYY-MM-DD)" });
     return;
@@ -358,10 +379,191 @@ router.get("/bookings", async (req, res) => {
     total,
     page,
     limit,
+    timezone: clubTz,
   });
 });
 
-/** Daily booking counts for UTC calendar days (same club scope as GET /bookings). */
+/** Non-PII aggregate scorecard stats for the club (all courses). */
+router.get("/reports/scorecards", async (req, res) => {
+  const clubId = paramClubId(req);
+  if (!clubId) {
+    res.status(400).json({ error: "clubId required" });
+    return;
+  }
+
+  const courseRows = await db.query.courses.findMany({
+    where: eq(courses.clubId, clubId),
+    columns: { id: true },
+  });
+  const courseIds = courseRows.map((c) => c.id);
+  if (courseIds.length === 0) {
+    res.json({
+      completionRate: 0,
+      totalRounds: 0,
+      scorecardCourses: [],
+      scoreDistribution: {
+        underPar: 0,
+        atPar: 0,
+        overPar1: 0,
+        overPar2plus: 0,
+      },
+    });
+    return;
+  }
+
+  const [totalBookingsRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(bookings.status, "confirmed"),
+        inArray(teeSlots.courseId, courseIds),
+        lt(teeSlots.datetime, new Date())
+      )
+    );
+
+  const [totalRoundsRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(roundScorecards)
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(
+      and(
+        inArray(teeSlots.courseId, courseIds),
+        isNull(bookings.deletedAt),
+        eq(bookings.status, "confirmed"),
+        lt(teeSlots.datetime, new Date())
+      )
+    );
+
+  const totalBookings = totalBookingsRow?.c ?? 0;
+  const totalRounds = totalRoundsRow?.c ?? 0;
+  const completionRate =
+    totalBookings === 0
+      ? 0
+      : Math.round((totalRounds / totalBookings) * 100) / 100;
+
+  const holeAvgRows = await db
+    .select({
+      courseId: courses.id,
+      courseName: courses.name,
+      holeCount: courses.holes,
+      holeNumber: roundScorecardHoles.holeNumber,
+      par: courseHoles.par,
+      avgScore: sql<number>`round(avg(${roundScorecardHoles.score})::numeric, 2)::float`,
+      sampleSize: sql<number>`count(*)::int`,
+    })
+    .from(roundScorecardHoles)
+    .innerJoin(
+      roundScorecards,
+      eq(roundScorecardHoles.scorecardId, roundScorecards.id)
+    )
+    .innerJoin(courses, eq(courses.id, roundScorecards.courseId))
+    .innerJoin(
+      courseHoles,
+      and(
+        eq(courseHoles.courseId, roundScorecards.courseId),
+        eq(courseHoles.holeNumber, roundScorecardHoles.holeNumber)
+      )
+    )
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(
+      and(inArray(teeSlots.courseId, courseIds), eq(courses.clubId, clubId))
+    )
+    .groupBy(
+      courses.id,
+      courses.name,
+      courses.holes,
+      roundScorecardHoles.holeNumber,
+      courseHoles.par
+    )
+    .orderBy(asc(courses.name), asc(roundScorecardHoles.holeNumber));
+
+  const scorecardCoursesMap = new Map<
+    string,
+    {
+      courseId: string;
+      courseName: string;
+      holeCount: number;
+      holeAverages: {
+        holeNumber: number;
+        par: number;
+        avgScore: number;
+        sampleSize: number;
+      }[];
+    }
+  >();
+
+  for (const r of holeAvgRows) {
+    let entry = scorecardCoursesMap.get(r.courseId);
+    if (!entry) {
+      entry = {
+        courseId: r.courseId,
+        courseName: r.courseName,
+        holeCount: r.holeCount,
+        holeAverages: [],
+      };
+      scorecardCoursesMap.set(r.courseId, entry);
+    }
+    entry.holeAverages.push({
+      holeNumber: r.holeNumber,
+      par: r.par,
+      avgScore: r.avgScore,
+      sampleSize: r.sampleSize,
+    });
+  }
+
+  const scorecardCourses = [...scorecardCoursesMap.values()];
+
+  const distRows = await db
+    .select({
+      delta: sql<number>`(${roundScorecardHoles.score} - ${courseHoles.par})::int`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(roundScorecardHoles)
+    .innerJoin(
+      roundScorecards,
+      eq(roundScorecardHoles.scorecardId, roundScorecards.id)
+    )
+    .innerJoin(
+      courseHoles,
+      and(
+        eq(courseHoles.courseId, roundScorecards.courseId),
+        eq(courseHoles.holeNumber, roundScorecardHoles.holeNumber)
+      )
+    )
+    .innerJoin(bookings, eq(roundScorecards.bookingId, bookings.id))
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .where(inArray(teeSlots.courseId, courseIds))
+    .groupBy(sql`(${roundScorecardHoles.score} - ${courseHoles.par})::int`);
+
+  let underPar = 0;
+  let atPar = 0;
+  let overPar1 = 0;
+  let overPar2plus = 0;
+  for (const row of distRows) {
+    if (row.delta < 0) underPar += row.count;
+    else if (row.delta === 0) atPar += row.count;
+    else if (row.delta === 1) overPar1 += row.count;
+    else overPar2plus += row.count;
+  }
+
+  res.json({
+    completionRate,
+    totalRounds,
+    scorecardCourses,
+    scoreDistribution: { underPar, atPar, overPar1, overPar2plus },
+  });
+});
+
+/**
+ * Daily booking stats by tee time (UTC calendar day), not by booking createdAt.
+ * Includes the selected past window plus the next REPORTS_TEE_FUTURE_DAYS UTC days so seeded
+ * upcoming tee times show up alongside past days.
+ */
 router.get("/reports", async (req, res) => {
   const clubId = paramClubId(req);
   if (!clubId) {
@@ -397,11 +599,13 @@ router.get("/reports", async (req, res) => {
     revenueGreenFees: number;
     revenueAddons: number;
     occupancyPct: number;
+    noShows: number;
   }[] = [];
 
   let totalBookings = 0;
   let totalPlayers = 0;
   let totalRevenueGreenFees = 0;
+  let noShowsTotal = 0;
   const dailyOccupancyRaw: number[] = [];
 
   const configRows = await db.query.clubConfig.findMany({
@@ -417,8 +621,11 @@ router.get("/reports", async (req, res) => {
 
   const rangeStart = new Date(todayUtc);
   rangeStart.setUTCDate(rangeStart.getUTCDate() - (numDays - 1));
-  const rangeEnd = new Date(todayUtc);
-  rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+  /** Exclusive end: UTC midnight after the last included tee day (past N + next REPORTS_TEE_FUTURE_DAYS). */
+  const teeRangeEnd = new Date(todayUtc);
+  teeRangeEnd.setUTCDate(
+    teeRangeEnd.getUTCDate() + 1 + REPORTS_TEE_FUTURE_DAYS
+  );
 
   const [sourceAgg] = await db
     .select({
@@ -432,12 +639,27 @@ router.get("/reports", async (req, res) => {
       and(
         isNull(bookings.deletedAt),
         eq(courses.clubId, clubId),
-        gte(bookings.createdAt, rangeStart),
-        lt(bookings.createdAt, rangeEnd)
+        gte(teeSlots.datetime, rangeStart),
+        lt(teeSlots.datetime, teeRangeEnd)
       )
     );
 
-  for (let offset = numDays - 1; offset >= 0; offset--) {
+  const [confirmedForRateRow] = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(bookings)
+    .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+    .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+    .where(
+      and(
+        isNull(bookings.deletedAt),
+        eq(courses.clubId, clubId),
+        inArray(bookings.status, ["confirmed", "no_show"]),
+        gte(teeSlots.datetime, rangeStart),
+        lt(teeSlots.datetime, teeRangeEnd)
+      )
+    );
+
+  for (let offset = numDays - 1; offset >= -REPORTS_TEE_FUTURE_DAYS; offset--) {
     const dayStart = new Date(todayUtc);
     dayStart.setUTCDate(dayStart.getUTCDate() - offset);
     const dayEnd = new Date(dayStart);
@@ -457,24 +679,25 @@ router.get("/reports", async (req, res) => {
         and(
           isNull(bookings.deletedAt),
           eq(courses.clubId, clubId),
-          gte(bookings.createdAt, dayStart),
-          lt(bookings.createdAt, dayEnd)
+          gte(teeSlots.datetime, dayStart),
+          lt(teeSlots.datetime, dayEnd)
         )
       );
 
     const [revRow] = await db
       .select({
-        revenue: sql<string>`coalesce(sum(coalesce(${teeSlots.price}, 0) * ${bookings.playersCount}), 0)::text`,
+        revenue: sql<string>`coalesce(sum(coalesce(${teeSlots.price}, ${clubs.bookingFee}, 0)::numeric * ${bookings.playersCount}::numeric), 0)::text`,
       })
       .from(bookings)
       .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
       .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .innerJoin(clubs, eq(courses.clubId, clubs.id))
       .where(
         and(
           isNull(bookings.deletedAt),
           eq(courses.clubId, clubId),
-          gte(bookings.createdAt, dayStart),
-          lt(bookings.createdAt, dayEnd)
+          gte(teeSlots.datetime, dayStart),
+          lt(teeSlots.datetime, dayEnd)
         )
       );
 
@@ -493,6 +716,21 @@ router.get("/reports", async (req, res) => {
         )
       );
 
+    const [noShowRow] = await db
+      .select({ c: sql<number>`count(*)::int` })
+      .from(bookings)
+      .innerJoin(teeSlots, eq(bookings.teeSlotId, teeSlots.id))
+      .innerJoin(courses, eq(teeSlots.courseId, courses.id))
+      .where(
+        and(
+          isNull(bookings.deletedAt),
+          eq(courses.clubId, clubId),
+          eq(bookings.status, "no_show"),
+          gte(teeSlots.datetime, dayStart),
+          lt(teeSlots.datetime, dayEnd)
+        )
+      );
+
     const totalSlots = totalSlotsForDay(configRows, courseCount, dateStr);
     const occupiedSlots = occRow?.occupied ?? 0;
     const occupancyRaw =
@@ -506,6 +744,8 @@ router.get("/reports", async (req, res) => {
     totalBookings += b;
     totalPlayers += p;
     totalRevenueGreenFees += revenueNum;
+    const noShowsDay = noShowRow?.c ?? 0;
+    noShowsTotal += noShowsDay;
     series.push({
       date: dateStr,
       bookings: b,
@@ -513,6 +753,7 @@ router.get("/reports", async (req, res) => {
       revenueGreenFees: revenueRounded,
       revenueAddons: 0,
       occupancyPct: round1(occupancyRaw),
+      noShows: noShowsDay,
     });
   }
 
@@ -524,8 +765,15 @@ router.get("/reports", async (req, res) => {
             dailyOccupancyRaw.length
         );
 
+  const confirmedTotal = confirmedForRateRow?.c ?? 0;
+  const noShowRate =
+    confirmedTotal > 0
+      ? round1((noShowsTotal / confirmedTotal) * 100)
+      : 0;
+
   res.json({
     days: numDays,
+    teeFutureDays: REPORTS_TEE_FUTURE_DAYS,
     series,
     totals: {
       bookings: totalBookings,
@@ -533,6 +781,8 @@ router.get("/reports", async (req, res) => {
       revenueGreenFees: round2(totalRevenueGreenFees),
       revenueAddons: 0,
       occupancyPct: totalsOccupancyPct,
+      noShows: noShowsTotal,
+      noShowRate,
       sources: {
         online: sourceAgg?.online ?? 0,
         staff: sourceAgg?.staff ?? 0,

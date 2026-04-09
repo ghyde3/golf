@@ -50,30 +50,33 @@ type SortKey =
   | "playersCount"
   | "status";
 
-function formatTime(iso: string) {
+function formatTime(iso: string, timeZone: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   }).format(d);
 }
 
-function formatDate(iso: string) {
+function formatDate(iso: string, timeZone: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone,
   }).format(d);
 }
 
-function formatCreated(iso: string) {
+function formatCreated(iso: string, timeZone: string) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
   }).format(d);
 }
 
@@ -154,6 +157,7 @@ export function BookingsClient({
   limit,
   query,
   courses,
+  timezone,
 }: {
   clubId: string;
   bookings: ClubBookingRow[];
@@ -162,6 +166,7 @@ export function BookingsClient({
   page: number;
   query: BookingsPageQuery;
   courses: { id: string; name: string }[];
+  timezone: string;
 }) {
   const router = useRouter();
   const [drawerId, setDrawerId] = useState<string | null>(null);
@@ -198,9 +203,9 @@ export function BookingsClient({
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-6">
         <div className="space-y-1">
           <p className="max-w-2xl text-sm text-muted">
-            Search and filter club bookings. Date range defaults to today (UTC)
-            on <span className="font-medium">booked</span> when left blank —
-            same window as the sidebar count.
+            Search and filter club bookings. With no dates, the range is today
+            in the club&apos;s time zone. Default view is tee times for that
+            day (same idea as the teesheet).
           </p>
         </div>
 
@@ -251,7 +256,7 @@ export function BookingsClient({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold uppercase tracking-widest text-muted">
-                From (UTC)
+                From
               </label>
               <Input
                 name="from"
@@ -261,7 +266,7 @@ export function BookingsClient({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-bold uppercase tracking-widest text-muted">
-                To (UTC)
+                To
               </label>
               <Input
                 name="to"
@@ -413,9 +418,9 @@ export function BookingsClient({
                           onClick={() => openBooking(b.id)}
                           className="text-left font-medium text-fairway hover:underline"
                         >
-                          {formatTime(b.teeSlot.datetime)}
+                          {formatTime(b.teeSlot.datetime, timezone)}
                           <span className="block text-xs font-normal text-muted md:inline md:ml-1">
-                            {formatDate(b.teeSlot.datetime)}
+                            {formatDate(b.teeSlot.datetime, timezone)}
                           </span>
                         </button>
                       </td>
@@ -443,7 +448,7 @@ export function BookingsClient({
                         {(b.status ?? "—").replace(/_/g, " ")}
                       </td>
                       <td className="hidden px-4 py-3 text-muted lg:table-cell">
-                        {formatCreated(b.createdAt)}
+                        {formatCreated(b.createdAt, timezone)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <button
@@ -533,6 +538,7 @@ export function BookingsClient({
           setDrawerId(null);
         }}
         onAfterChange={() => router.refresh()}
+        timeZone={timezone}
       />
 
       <AlertDialog open={!!cancelId} onOpenChange={() => setCancelId(null)}>

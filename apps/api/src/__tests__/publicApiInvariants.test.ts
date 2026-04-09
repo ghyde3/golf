@@ -28,4 +28,27 @@ describe("Public API invariants", () => {
     expect(res.status).not.toBe(401);
     expect(res.status).toBe(400);
   });
+
+  it("GET /api/me/profile returns 401 without auth", async () => {
+    const res = await request(app).get("/api/me/profile");
+    expect(res.status).toBe(401);
+  });
+
+  it("PATCH /api/me/profile returns 401 without auth", async () => {
+    const res = await request(app).patch("/api/me/profile").send({ name: "Test" });
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /api/clubs/:clubId/courses/:courseId/holes returns 401 without auth", async () => {
+    const res = await request(app)
+      .get("/api/clubs/00000000-0000-0000-0000-000000000001/courses/00000000-0000-0000-0000-000000000002/holes");
+    expect(res.status).toBe(401);
+  });
+
+  it("PATCH /api/bookings/:id returns 401 without auth", async () => {
+    const res = await request(app)
+      .patch("/api/bookings/00000000-0000-0000-0000-000000000001")
+      .send({ playersCount: 2 });
+    expect(res.status).toBe(401);
+  });
 });

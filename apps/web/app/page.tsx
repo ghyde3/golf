@@ -126,7 +126,7 @@ export default async function Home() {
         <div className="flex items-center gap-5">
           {session?.user ? (
             <Link
-              href="/my-bookings"
+              href="/account#bookings"
               className="text-[13px] font-medium text-white/80 transition hover:text-white"
             >
               My bookings
@@ -192,7 +192,7 @@ export default async function Home() {
 
       {session?.user ? (
         <div className="border-b border-ds-stone/60 bg-ds-warm-white px-4 py-2.5 text-center lg:hidden">
-          <Link href="/my-bookings" className="text-[12px] font-medium text-ds-fairway">
+          <Link href="/account#bookings" className="text-[12px] font-medium text-ds-fairway">
             My bookings
           </Link>
         </div>

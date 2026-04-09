@@ -10,6 +10,7 @@ type BookingsApiPayload = {
   total?: number;
   page?: number;
   limit?: number;
+  timezone?: string;
 };
 
 export default async function ClubBookingsPage({
@@ -38,6 +39,10 @@ export default async function ClubBookingsPage({
   const total = typeof data.total === "number" ? data.total : bookings.length;
   const page = typeof data.page === "number" ? data.page : 1;
   const limit = typeof data.limit === "number" ? data.limit : 25;
+  const timezone =
+    typeof data.timezone === "string" && data.timezone.length > 0
+      ? data.timezone
+      : "America/New_York";
 
   const coursesRes = await clubApi(params.clubId, "/courses");
   const courses = coursesRes.ok
@@ -53,6 +58,7 @@ export default async function ClubBookingsPage({
       limit={limit}
       query={query}
       courses={courses}
+      timezone={timezone}
     />
   );
 }

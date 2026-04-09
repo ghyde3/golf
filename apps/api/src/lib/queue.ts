@@ -31,3 +31,28 @@ export async function enqueueEmail(
     removeOnComplete: true,
   });
 }
+
+let bookingQueue: Queue | null = null;
+
+export function getBookingQueue(): Queue | null {
+  if (!process.env.REDIS_URL) return null;
+  if (!bookingQueue) {
+    bookingQueue = new Queue("booking", { connection: createBullConnection() });
+  }
+  return bookingQueue;
+}
+
+export async function enqueueBookingJob(
+  name: string,
+  data: Record<string, unknown>,
+  opts?: { delay?: number }
+): Promise<void> {
+  const q = getBookingQueue();
+  if (!q) return;
+  await q.add(name, data, {
+    attempts: 3,
+    backoff: { type: "exponential", delay: 2000 },
+    removeOnComplete: true,
+    delay: opts?.delay,
+  });
+}
